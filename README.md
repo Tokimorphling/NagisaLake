@@ -1,5 +1,9 @@
 # Nagisalake
 
+[![LINUX DO](https://img.shields.io/badge/LINUX%20DO-%E8%AE%A4%E5%8F%AFLINUXDO%E7%A4%BE%E5%8C%BA-eab308?style=flat-square&labelColor=1c1c1c)](https://linux.do/ "LINUX DO 社区")
+
+> 开源项目已链接认可 [LINUX DO 社区](https://linux.do/)。
+
 Nagisalake 将云端 Hub 与 NAT 后的 ComfyUI Worker 连接起来。控制面使用 Tokio、Axum、
 WebSocket/SMUX 和类型化 JSON 协议；PostgreSQL 保存公共控制面的多租户元数据，多媒体数据面使用
 私有 S3-compatible 对象存储。
