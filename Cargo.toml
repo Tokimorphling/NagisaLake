@@ -1,0 +1,94 @@
+[workspace]
+members = [
+    "apps/nagisalake-hub",
+    "apps/nagisalake-loadgen",
+    "apps/nagisalake-worker",
+    "crates/nagisalake-comfyui",
+    "crates/nagisalake-core",
+    "crates/nagisalake-hub-auth",
+    "crates/nagisalake-hub-store",
+    "crates/nagisalake-journal",
+    "crates/nagisalake-object-store",
+    "crates/nagisalake-protocol",
+    "crates/nagisalake-rpc",
+    "crates/nagisalake-runtime",
+    "crates/nagisalake-transport",
+    "services/nagisalake-workflow-catalog",
+    "crates/nagisalake-worker",
+    "crates/nagisalake-workflow",
+]
+resolver = "2"
+
+[workspace.package]
+authors = ["nagisalake contributors"]
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+nagisalake-comfyui = { path = "crates/nagisalake-comfyui" }
+nagisalake-core = { path = "crates/nagisalake-core" }
+nagisalake-hub-auth = { path = "crates/nagisalake-hub-auth" }
+nagisalake-hub-store = { path = "crates/nagisalake-hub-store" }
+nagisalake-journal = { path = "crates/nagisalake-journal" }
+nagisalake-object-store = { path = "crates/nagisalake-object-store" }
+nagisalake-protocol = { path = "crates/nagisalake-protocol" }
+nagisalake-workflow-catalog = { path = "services/nagisalake-workflow-catalog" }
+nagisalake-rpc = { path = "crates/nagisalake-rpc" }
+nagisalake-runtime = { path = "crates/nagisalake-runtime" }
+nagisalake-transport = { path = "crates/nagisalake-transport" }
+nagisalake-worker = { path = "crates/nagisalake-worker" }
+nagisalake-workflow = { path = "crates/nagisalake-workflow" }
+
+anyhow = "1"
+argon2 = "0.5"
+bincode = { version = "2", features = ["serde"] }
+# Pin only the generated client. Its manifest owns the matching Smithy release
+# set; declaring those implementation crates directly enabled unused features
+# and made upgrades vulnerable to API skew.
+aws-sdk-s3 = { version = "=1.141.0", default-features = false, features = ["behavior-version-latest", "default-https-client", "http-1x", "rt-tokio", "sigv4a"] }
+axum = { version = "0.8", default-features = false }
+bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+data-encoding = "2"
+# Arc-backed string for ids that are cloned far more often than they are built.
+# Strings up to 30 bytes stay inline; the 36-byte uuids we pass around land in
+# the shared representation, where a clone is a refcount bump.
+faststr = { version = "0.2", features = ["serde"] }
+futures-util = "0.3"
+hashbrown = "0.16"
+motore = "=0.4.1"
+pyo3 = "0.29.2"
+reqwest = { version = "0.13", default-features = false }
+# debug-embed keeps the assets inside the binary for debug builds too, so a
+# dev Hub behaves like a release one instead of reading web/dist at runtime.
+rust-embed = { version = "8", features = ["debug-embed", "mime-guess"] }
+# The S3 and HTTP clients already use AWS-LC. Reusing that provider for WSS
+# avoids linking ring as a second crypto implementation.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+service-async = "0.2.4"
+sha2 = "0.11"
+sqlx = { version = "0.9", default-features = false }
+thiserror = "2"
+tokilake-core = "=0.1.1"
+tokilake-smux = "=0.1.1"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "__rustls-tls"] }
+tokio-util = { version = "0.7", features = ["io", "time"] }
+toml = "1.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["fast-rng", "serde", "v4"] }
+# Pinned to the release used by Axum and tokio-tungstenite, so the binary carries
+# one Mozilla root set. The worker adds any private CA on top of it.
+webpki-roots = "1"
+
+
+# Thin LTO keeps cross-crate optimization while avoiding fat LTO's much longer
+# link stage. Stripping symbols provides the larger low-risk size reduction.
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+strip = "symbols"

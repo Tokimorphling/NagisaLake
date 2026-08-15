@@ -1,0 +1,19 @@
+[package]
+name = "nagisalake-worker-cli"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+nagisalake-worker = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[bin]]
+name = "nagisalake-worker"
+path = "src/main.rs"

@@ -1,0 +1,23 @@
+[package]
+name = "nagisalake-rpc"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bincode = { workspace = true }
+bytes = { workspace = true }
+faststr = { workspace = true }
+futures-util = { workspace = true }
+hashbrown = { workspace = true }
+motore = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+futures-util = { workspace = true }

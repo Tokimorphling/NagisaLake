@@ -1,0 +1,57 @@
+
+[server]
+# Bind inside the container; Docker and Caddy keep the host port private.
+listen = "0.0.0.0:9091"
+
+[log]
+# RUST_LOG overrides this when set. Without either, the Hub logs nothing at all.
+filter = "info"
+
+# Public mode reads the PostgreSQL connection string from
+# NAGISALAKE_DATABASE_URL. Keep database credentials out of this tracked file.
+
+
+[transport]
+max_frame_bytes = 1048576
+accept_timeout_seconds = 15
+command_ack_timeout_seconds = 10
+heartbeat_interval_seconds = 15
+max_artifact_bytes = 5368709120
+
+
+[browser]
+registration_enabled = true
+password_auth_enabled = false
+cookie_secure = true
+allowed_origins = []
+
+[object_store]
+# Cloudflare R2 S3-compatible endpoint.
+bucket = "nagisalake-private"
+region = "auto"
+endpoint_url = "https://bb940b4d3c79327ae840d0eb4d3a996f.r2.cloudflarestorage.com"
+force_path_style = true
+presign_ttl_seconds = 900
+access_key_id_env = "NAGISALAKE_S3_ACCESS_KEY_ID"
+secret_access_key_env = "NAGISALAKE_S3_SECRET_ACCESS_KEY"
+
+[oauth]
+public_url = "https://nagisalake.tokilake.abrdns.com"
+
+[oauth.providers.github]
+kind = "github"
+client_id = "Ov23lidMqXlnLN1NMiqo"
+client_secret_env = "NAGISALAKE_OAUTH_GITHUB_SECRET"
+
+# Create the application at https://connect.linux.do/dash/sso first, then
+# uncomment this section and set the issued client id. Keep the client secret
+# in the environment file rather than this tracked configuration.
+# [oauth.providers.linuxdo]
+# kind = "linuxdo"
+# client_id = "replace-with-linuxdo-client-id"
+# client_secret_env = "NAGISALAKE_OAUTH_LINUXDO_SECRET"
+
+[rate_limit]
+enabled = true
+# Only use this when the HTTPS proxy overwrites/sanitizes X-Forwarded-For.
+trust_forwarded_for = true

@@ -1,0 +1,283 @@
+@import 'tailwindcss';
+
+/* Dark is the default. Light overrides come from an explicit data-theme or,
+   when the user has expressed no preference, from prefers-color-scheme. */
+:root {
+  --app-bg: oklch(0.15 0.025 260);
+  --app-surface: oklch(0.19 0.026 262);
+  --app-surface-2: oklch(0.23 0.028 263);
+  --app-elevated: oklch(0.27 0.03 264);
+  --app-border: oklch(0.30 0.028 264 / 0.8);
+  --app-border-strong: oklch(0.42 0.035 265);
+  --app-text: oklch(0.97 0.006 260);
+  --app-muted: oklch(0.74 0.02 262);
+  --app-subtle: oklch(0.60 0.022 262);
+  --app-accent: oklch(0.78 0.14 195);
+  --app-accent-fg: oklch(0.16 0.035 235);
+  --app-accent-soft: oklch(0.28 0.07 210);
+  --app-violet: oklch(0.72 0.17 295);
+  --app-success: oklch(0.78 0.16 155);
+  --app-warning: oklch(0.84 0.15 85);
+  --app-danger: oklch(0.72 0.19 20);
+  --app-info: oklch(0.76 0.14 240);
+  --app-shadow-card: 0 4px 20px -2px oklch(0 0 0 / 0.4), 0 2px 6px -1px oklch(0 0 0 / 0.3);
+  --app-shadow-glow: 0 0 25px -5px oklch(0.78 0.14 195 / 0.25);
+  color-scheme: dark;
+}
+
+/* Light theme tokens. The media query covers the auto case and the
+   data-theme='light' selector covers the explicit case. Both share the
+   same declarations via this list, so adding a token touches one place. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --app-bg: oklch(0.975 0.005 250);
+    --app-surface: oklch(0.985 0.005 250);
+    --app-surface-2: oklch(0.965 0.008 255);
+    --app-elevated: oklch(1 0 0);
+    --app-border: oklch(0.89 0.01 258);
+    --app-border-strong: oklch(0.80 0.015 258);
+    --app-text: oklch(0.22 0.02 262);
+    --app-muted: oklch(0.46 0.022 262);
+    --app-subtle: oklch(0.58 0.02 262);
+    --app-accent: oklch(0.54 0.14 210);
+    --app-accent-fg: oklch(0.99 0.005 220);
+    --app-accent-soft: oklch(0.93 0.035 210);
+    --app-violet: oklch(0.54 0.20 295);
+    --app-success: oklch(0.56 0.15 155);
+    --app-warning: oklch(0.62 0.15 70);
+    --app-danger: oklch(0.56 0.20 25);
+    --app-info: oklch(0.54 0.15 245);
+    --app-shadow-card: 0 4px 16px -2px oklch(0.4 0.03 260 / 0.08), 0 1px 3px oklch(0.4 0.03 260 / 0.04);
+    --app-shadow-glow: 0 0 20px -4px oklch(0.54 0.14 210 / 0.2);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --app-bg: oklch(0.975 0.005 250);
+  --app-surface: oklch(0.985 0.005 250);
+  --app-surface-2: oklch(0.965 0.008 255);
+  --app-elevated: oklch(1 0 0);
+  --app-border: oklch(0.89 0.01 258);
+  --app-border-strong: oklch(0.80 0.015 258);
+  --app-text: oklch(0.22 0.02 262);
+  --app-muted: oklch(0.46 0.022 262);
+  --app-subtle: oklch(0.58 0.02 262);
+  --app-accent: oklch(0.54 0.14 210);
+  --app-accent-fg: oklch(0.99 0.005 220);
+  --app-accent-soft: oklch(0.93 0.035 210);
+  --app-violet: oklch(0.54 0.20 295);
+  --app-success: oklch(0.56 0.15 155);
+  --app-warning: oklch(0.62 0.15 70);
+  --app-danger: oklch(0.56 0.20 25);
+  --app-info: oklch(0.54 0.15 245);
+  --app-shadow-card: 0 4px 16px -2px oklch(0.4 0.03 260 / 0.08), 0 1px 3px oklch(0.4 0.03 260 / 0.04);
+  --app-shadow-glow: 0 0 20px -4px oklch(0.54 0.14 210 / 0.2);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--app-bg);
+  --color-surface: var(--app-surface);
+  --color-surface-2: var(--app-surface-2);
+  --color-elevated: var(--app-elevated);
+  --color-border: var(--app-border);
+  --color-border-strong: var(--app-border-strong);
+  --color-text: var(--app-text);
+  --color-muted: var(--app-muted);
+  --color-subtle: var(--app-subtle);
+  --color-accent: var(--app-accent);
+  --color-accent-fg: var(--app-accent-fg);
+  --color-accent-soft: var(--app-accent-soft);
+  --color-violet: var(--app-violet);
+  --color-success: var(--app-success);
+  --color-warning: var(--app-warning);
+  --color-danger: var(--app-danger);
+  --color-info: var(--app-info);
+  --shadow-card: var(--app-shadow-card);
+  --shadow-glow: var(--app-shadow-glow);
+  /* Radius scale. Components prefer the Tailwind rounded-* utilities, but
+     these tokens give CSS-author contexts (custom utilities, inline styles) a
+     single source of truth so ad-hoc values stop proliferating. */
+  --app-radius-sm: 0.25rem;
+  --app-radius-md: 0.5rem;
+  --app-radius-lg: 0.75rem;
+  --app-radius-xl: 1rem;
+  --app-radius-2xl: 1.5rem;
+  --app-radius-full: 9999px;
+  --radius-sm: var(--app-radius-sm);
+  --radius-md: var(--app-radius-md);
+  --radius-lg: var(--app-radius-lg);
+  --radius-xl: var(--app-radius-xl);
+  --radius-2xl: var(--app-radius-2xl);
+  --radius-full: var(--app-radius-full);
+  /* Z-index scale so overlays no longer collide on magic numbers. */
+  --app-z-base: 0;
+  --app-z-dropdown: 40;
+  --app-z-sticky: 40;
+  --app-z-popover: 50;
+  --app-z-modal: 50;
+  --app-z-lightbox: 50;
+  --app-z-toast: 60;
+  /* Duration scale for consistent transition timing. */
+  --app-duration-fast: 150ms;
+  --app-duration-base: 200ms;
+  --app-duration-slow: 500ms;
+  --app-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'SF Pro Display', 'Inter', 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--app-border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--app-border-strong) 70%, transparent);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-accent);
+  }
+}
+
+@utility aurora {
+  background-image:
+    radial-gradient(55rem 32rem at 15% -10%, color-mix(in oklab, var(--app-accent) 18%, transparent), transparent 65%),
+    radial-gradient(45rem 28rem at 85% 5%, color-mix(in oklab, var(--app-violet) 16%, transparent), transparent 60%);
+}
+
+@utility glass-card {
+  background: color-mix(in oklab, var(--app-surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklab, var(--app-border) 90%, transparent);
+}
+
+@utility glass-header {
+  background: color-mix(in oklab, var(--app-surface) 80%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@utility skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--app-surface-2);
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--app-border-strong) 50%, transparent),
+      transparent
+    );
+    animation: shimmer 1.5s infinite ease-in-out;
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px color-mix(in oklab, var(--app-accent) 40%, transparent);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 24px color-mix(in oklab, var(--app-accent) 70%, transparent);
+    opacity: 0.85;
+  }
+}
+
+@utility animate-glow {
+  animation: pulseGlow 3s infinite ease-in-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-scale-in {
+  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-fade-in-up {
+  animation: fadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@utility animate-fade-out-down {
+  animation: fadeOutDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  html {
+    scroll-behavior: auto !important;
+  }
+}

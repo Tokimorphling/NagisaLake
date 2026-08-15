@@ -1,0 +1,16 @@
+# Build, test and lint on current stable. Nothing here is pinned, so `rustup
+# update` is the whole upgrade procedure.
+#
+# Formatting is the exception. rustfmt.toml relies on nightly-only options
+# (struct_field_align_threshold, group_imports, imports_granularity,
+# format_strings, ...); stable rustfmt warns about each one, drops it, and then
+# reformats nearly every file, stripping the field alignment this codebase uses.
+# rustfmt is deliberately absent from the components below so that on a clean
+# install `cargo fmt` refuses to run instead of doing that. Format with nightly:
+#
+#     rustup toolchain install nightly --component rustfmt
+#     cargo +nightly fmt --all
+[toolchain]
+channel = "stable"
+components = ["clippy"]
+profile = "minimal"

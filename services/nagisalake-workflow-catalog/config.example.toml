@@ -1,0 +1,12 @@
+# Example configuration for the workflow catalog service
+
+listen_addr = "127.0.0.1:9001"
+
+# The Hub's user id. The catalog trusts this id out of band on loopback and
+# refuses to start on a non-loopback address. Required.
+trusted_user_id = "hub"
+
+[store]
+url = "postgresql://localhost/nagisalake_dev"
+max_connections = 10
+run_migrations = true

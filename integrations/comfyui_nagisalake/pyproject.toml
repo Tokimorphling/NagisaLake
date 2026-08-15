@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "nagisalake-comfyui-worker"
+version = "0.1.0"
+description = "Tokio Nagisalake Worker bridge for ComfyUI"
+requires-python = ">=3.9"
+
+[tool.maturin]
+manifest-path = "../../crates/nagisalake-worker/Cargo.toml"
+module-name = "nagisalake_comfyui._nagisalake_worker"
+python-source = "python"
+features = ["python"]
+bindings = "pyo3"

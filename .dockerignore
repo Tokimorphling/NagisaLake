@@ -1,0 +1,19 @@
+.git
+.github
+.dockerignore
+# Vendored reference checkouts, ~90MB with their own nested .git directories
+# that the .git rule above does not reach.
+ref
+# Keeping target/ out is what lets the cooked dependency layer in the Dockerfile
+# survive `COPY . .`.
+target
+web/node_modules
+web/dist
+deploy/prod/.env
+**/.env
+*.db
+*.db-shm
+*.db-wal
+.local-stack
+test_workflows
+worker-state

@@ -1,0 +1,30 @@
+[package]
+name = "nagisalake-transport"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+bytes = { workspace = true }
+futures-util = { workspace = true }
+nagisalake-protocol = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokilake-core = { workspace = true }
+tokilake-smux = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+webpki-roots = { workspace = true }
+
+[dev-dependencies]
+# Generates the throwaway CA and server certificate the wss tests hand to
+# rustls, so no private key has to live in the repository.
+rcgen = "0.14"
+# Terminates TLS in the test Hub stub, so the wss tests drive a real handshake
+# against a real certificate chain instead of asserting on a connector.
+tokio-rustls = { version = "0.26", default-features = false }

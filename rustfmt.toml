@@ -1,0 +1,8 @@
+# Every option here is nightly-only, so this file is only honoured by
+# `cargo +nightly fmt --all`. See rust-toolchain.toml.
+struct_field_align_threshold = 20
+format_macro_bodies = true
+format_strings = true
+overflow_delimited_expr = true
+group_imports = "One"
+imports_granularity = "Crate"

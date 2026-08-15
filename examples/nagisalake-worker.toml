@@ -1,0 +1,52 @@
+work_dir = "./worker-state/work"
+
+[hub]
+# The worker only needs this outbound connection through NAT.
+url = "ws://127.0.0.1:9091/v1/worker/connect"
+reconnect_max_seconds = 30
+connect_timeout_seconds = 15
+max_frame_bytes = 1048576
+# Prefer NAGISALAKE_WORKER_TOKEN in production.
+token = "development-worker-token"
+
+# Only needed when the Hub's certificate comes from a private CA. A `wss://` url
+# behind a publicly issued certificate needs no [hub.tls] section at all.
+# Relative paths resolve from this file, and the bundle is re-read on every
+# reconnect so rotating it does not need a restart.
+#
+# [hub.tls]
+# ca_certificates = ["./tls/hub-ca.pem"]
+
+[worker]
+namespace = "home-gpu"
+node_name = "comfyui-01"
+parallelism = 1
+queue_depth = 4
+
+[worker.labels]
+gpu = "rtx-4090"
+location = "home"
+
+[state]
+# Relative paths are resolved from this TOML file.
+sqlite_url = "sqlite://worker-state/worker.db"
+
+[comfyui]
+base_url = "http://127.0.0.1:8188"
+poll_interval_ms = 1000
+request_timeout_seconds = 60
+max_output_bytes = 5368709120
+
+[[workflows]]
+id = "sdxl-txt2img"
+version = "v1"
+file = "./workflows/sdxl-txt2img-api.json"
+output_types = ["image/png"]
+
+[workflows.parameters]
+prompt = "/6/inputs/text"
+negative_prompt = "/5/inputs/text"
+seed = "/3/inputs/seed"
+steps = "/3/inputs/steps"
+width = "/7/inputs/width"
+height = "/7/inputs/height"

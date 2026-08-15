@@ -1,0 +1,47 @@
+[server]
+# Safe development default. Public deployments bind behind an HTTPS proxy and
+# replace/remove the legacy example credentials below.
+listen = "127.0.0.1:9091"
+
+[auth]
+# Legacy compatibility credentials. Public mode uses PostgreSQL-issued nwk_/nsk_
+# credentials instead; keep these only while migrating old clients.
+worker_token = "development-worker-token"
+consumer_token = "development-api-token"
+
+[browser]
+registration_enabled = true
+password_auth_enabled = true
+# Set true behind HTTPS. false is convenient only for local HTTP tests.
+cookie_secure = false
+access_ttl_seconds = 900
+refresh_ttl_seconds = 2592000
+# Origins allowed to call POST /api/v1/auth/refresh. Needed for a separately
+# hosted frontend, such as the Vite dev server on :3000. A console compiled in
+# with --features embed-web is served from the Hub's own origin and is always
+# accepted, so it does not need an entry here. An empty list disables the check.
+allowed_origins = ["http://localhost:3000"]
+
+# Public mode: uncomment this block, use a role with least-privilege access,
+# and inject NAGISALAKE_DATABASE_URL in production instead of storing a secret here.
+# [database]
+# url = "postgres://nagisalake:change-me@127.0.0.1:5432/nagisalake"
+# max_connections = 16
+# run_migrations = true
+
+[transport]
+max_frame_bytes = 1048576
+accept_timeout_seconds = 15
+command_ack_timeout_seconds = 10
+heartbeat_interval_seconds = 15
+max_artifact_bytes = 5368709120
+
+[object_store]
+bucket = "nagisalake-private"
+region = "us-east-1"
+# MinIO/R2 example. Remove endpoint_url for AWS S3.
+endpoint_url = "http://127.0.0.1:9000"
+force_path_style = true
+presign_ttl_seconds = 900
+access_key_id_env = "NAGISALAKE_S3_ACCESS_KEY_ID"
+secret_access_key_env = "NAGISALAKE_S3_SECRET_ACCESS_KEY"

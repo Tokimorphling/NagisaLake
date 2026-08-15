@@ -1,0 +1,1394 @@
+openapi: 3.1.0
+info:
+  title: Nagisalake Product API
+  version: 1.0.0
+  description: |
+    Stable browser and programmatic control-plane API for Nagisalake Hub.
+    The API is tenant-scoped by the authenticated browser session or API key.
+    Cursor values are opaque and must only be echoed to the same collection.
+servers:
+  - url: /api/v1
+    description: Same-origin Hub API
+tags:
+  - name: auth
+  - name: organizations
+  - name: credentials
+  - name: devices
+  - name: workflows
+  - name: artifacts
+  - name: gallery
+  - name: jobs
+paths:
+  /openapi.yaml:
+    get:
+      tags: [auth]
+      operationId: getOpenApiDocument
+      security: []
+      responses:
+        '200':
+          description: This OpenAPI document
+          content:
+            application/yaml:
+              schema: { type: string }
+  /settings/public:
+    get:
+      tags: [auth]
+      operationId: getPublicSettings
+      security: []
+      responses:
+        '200':
+          description: Public deployment settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicSettings' }
+
+  /auth/oauth/providers:
+    get:
+      tags: [auth]
+      operationId: listOAuthProviders
+      security: []
+      responses:
+        '200':
+          description: Configured OAuth providers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items: { $ref: '#/components/schemas/OAuthProvider' }
+
+  /auth/oauth/{provider}/start:
+    get:
+      tags: [auth]
+      operationId: startOAuth
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: redirect
+          in: query
+          required: false
+          schema: { type: string, default: / }
+      responses:
+        '303': { description: Redirect to the OAuth provider }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /auth/oauth/{provider}/callback:
+    get:
+      tags: [auth]
+      operationId: finishOAuth
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+        - { name: error_description, in: query, required: false, schema: { type: string } }
+      responses:
+        '303': { description: Redirect to the console; session cookies are set on success }
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: registerPasswordCompatibility
+      security: []
+      description: Local compatibility only. Public deployments use OAuth-only authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AuthBody' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: loginPasswordCompatibility
+      security: []
+      description: Local compatibility only. Public deployments use OAuth-only authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AuthBody' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      security: []
+      description: Requires the HttpOnly refresh cookie, matching CSRF header, and valid Origin.
+      responses:
+        '200': { $ref: '#/components/responses/AuthBody' }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Session revoked }
+
+  /auth/revoke-all-sessions:
+    post:
+      tags: [auth]
+      operationId: revokeAllSessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Sessions revoked }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user and memberships
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+    delete:
+      tags: [auth]
+      operationId: deleteCurrentAccount
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Account deleted and session cookies cleared }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /auth/identities:
+    get:
+      tags: [auth]
+      operationId: listLinkedOAuthIdentities
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OAuth identities linked to the account
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OAuthIdentity' }
+
+  /organizations:
+    get:
+      tags: [organizations]
+      operationId: listOrganizations
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Organizations visible to the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Membership' }
+    post:
+      tags: [organizations]
+      operationId: createOrganization
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        '201':
+          description: Created organization membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+
+  /organizations/{org_id}/members:
+    get:
+      tags: [organizations]
+      operationId: listMembers
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      responses:
+        '200':
+          description: Organization members
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OrganizationMember' }
+
+  /organizations/{org_id}/members/{user_id}:
+    patch:
+      tags: [organizations]
+      operationId: changeMemberRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '204': { description: Role changed }
+    delete:
+      tags: [organizations]
+      operationId: removeMember
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204': { description: Member removed }
+
+  /organizations/{org_id}/member-invites:
+    get:
+      tags: [organizations]
+      operationId: listOrganizationInvites
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      responses:
+        '200':
+          description: Organization invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OrganizationInvite' }
+    post:
+      tags: [organizations]
+      operationId: createOrganizationInvite
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrganizationInviteRequest' }
+      responses:
+        '201':
+          description: Invitation and one-time plaintext code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedOrganizationInvite' }
+
+  /organizations/{org_id}/member-invites/{invite_id}:
+    delete:
+      tags: [organizations]
+      operationId: revokeOrganizationInvite
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - { name: invite_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Invitation revoked }
+
+  /organization-invitations/accept:
+    post:
+      tags: [organizations]
+      operationId: acceptOrganizationInvite
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^noi_' }
+      responses:
+        '200':
+          description: New membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+
+  /organizations/{org_id}/owner-transfer:
+    post:
+      tags: [organizations]
+      operationId: transferOrganizationOwner
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string }
+      responses:
+        '204': { description: Ownership transferred }
+
+  /organizations/{org_id}/export:
+    get:
+      tags: [organizations]
+      operationId: exportOrganization
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      responses:
+        '200':
+          description: Organization control-plane export
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationExport' }
+
+  /organizations/{org_id}:
+    delete:
+      tags: [organizations]
+      operationId: deleteOrganization
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: { type: string, description: Must equal org_id }
+      responses:
+        '204': { description: Organization and its control-plane data deleted }
+
+  /organizations/{org_id}/quota:
+    get:
+      tags: [organizations]
+      operationId: getQuota
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      responses:
+        '200':
+          description: Quota policy and usage
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaSnapshot' }
+    patch:
+      tags: [organizations]
+      operationId: updateQuota
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuotaPolicyUpdate' }
+      responses:
+        '200':
+          description: Updated quota
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaSnapshot' }
+
+  /organizations/{org_id}/audit-logs:
+    get:
+      tags: [organizations]
+      operationId: listAuditLogs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated audit log page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogPage' }
+
+  /organizations/{org_id}/api-keys:
+    get:
+      tags: [credentials]
+      operationId: listApiKeys
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated API key page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyPage' }
+    post:
+      tags: [credentials]
+      operationId: createApiKey
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateApiKeyRequest' }
+      responses:
+        '201':
+          description: API key; plaintext is returned once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedApiKey' }
+
+  /organizations/{org_id}/api-keys/{key_id}:
+    delete:
+      tags: [credentials]
+      operationId: revokeApiKey
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - { name: key_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: API key revoked }
+
+  /organizations/{org_id}/worker-credentials:
+    get:
+      tags: [credentials]
+      operationId: listWorkerCredentials
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated Worker credential page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkerCredentialPage' }
+    post:
+      tags: [credentials]
+      operationId: createWorkerCredential
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrgId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkerCredentialRequest' }
+      responses:
+        '201':
+          description: Worker credential; plaintext is returned once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedWorkerCredential' }
+
+  /organizations/{org_id}/worker-credentials/{credential_id}:
+    delete:
+      tags: [credentials]
+      operationId: revokeWorkerCredential
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - { name: credential_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Credential revoked and matching Worker sessions disconnected }
+
+  /devices:
+    get:
+      tags: [devices]
+      operationId: listDevices
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated visible device page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DevicePage' }
+
+  /device-invites:
+    post:
+      tags: [devices]
+      operationId: createDeviceInvite
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDeviceInviteRequest' }
+      responses:
+        '201':
+          description: Device invite; plaintext is returned once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedDeviceInvite' }
+
+  /device-invites/{invite_id}:
+    delete:
+      tags: [devices]
+      operationId: revokeDeviceInvite
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: invite_id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Invite revoked }
+
+  /device-invitations/accept:
+    post:
+      tags: [devices]
+      operationId: acceptDeviceInvite
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^ndi_' }
+      responses:
+        '200':
+          description: Device grant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceGrant' }
+
+  /devices/shares/revoke:
+    post:
+      tags: [devices]
+      operationId: revokeDeviceShare
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevokeDeviceShareRequest' }
+      responses:
+        '204': { description: Device grant revoked }
+
+  /workflows:
+    get:
+      tags: [workflows]
+      operationId: listWorkflows
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated approved workflow catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowPage' }
+
+  /artifacts/uploads:
+    post:
+      tags: [artifacts]
+      operationId: createArtifactUpload
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUploadRequest' }
+      responses:
+        '201':
+          description: Artifact metadata and presigned upload request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadResponse' }
+
+  /artifacts/uploads/{artifact_id}/complete:
+    post:
+      tags: [artifacts]
+      operationId: completeArtifactUpload
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArtifactId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteUploadRequest' }
+      responses:
+        '200':
+          description: Completed artifact
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Artifact' }
+
+  /artifacts/{artifact_id}/download:
+    get:
+      tags: [artifacts]
+      operationId: getArtifactDownload
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArtifactId' }]
+      responses:
+        '200':
+          description: Artifact metadata and presigned download request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DownloadResponse' }
+
+  /artifacts/{artifact_id}/content:
+    get:
+      tags: [artifacts]
+      operationId: streamArtifactContent
+      description: Same-origin, authorization-checked media stream. Supports one HTTP byte range.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ArtifactId'
+        - $ref: '#/components/parameters/Range'
+      responses:
+        '200':
+          description: Complete artifact body
+          headers:
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '206':
+          description: Requested byte range
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '416': { description: Unsatisfiable or multiple byte range }
+
+  /gallery/items:
+    get:
+      tags: [gallery]
+      operationId: listGalleryItems
+      description: Cross-organization gallery for signed-in browser users; API keys are rejected.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/GalleryLimit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Public, keyset-paginated gallery
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GalleryPage' }
+    post:
+      tags: [gallery]
+      operationId: publishGalleryItem
+      description: Publishes a ready completed output owned by the current browser user.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishGalleryRequest' }
+      responses:
+        '200':
+          description: Published item (idempotent for an already-published artifact)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GalleryItem' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /gallery/items/{gallery_item_id}:
+    get:
+      tags: [gallery]
+      operationId: getGalleryItem
+      description: Cross-organization detail for signed-in browser users; API keys are rejected.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/GalleryItemId' }]
+      responses:
+        '200':
+          description: Public gallery item
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GalleryItem' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [gallery]
+      operationId: unpublishGalleryItem
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/GalleryItemId' }]
+      responses:
+        '204': { description: Publication removed }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /gallery/items/{gallery_item_id}/content:
+    get:
+      tags: [gallery]
+      operationId: streamGalleryItemContent
+      description: Stable same-origin stream for signed-in browser users, available only while the ready artifact is published.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/GalleryItemId'
+        - $ref: '#/components/parameters/Range'
+      responses:
+        '200':
+          description: Complete public media body
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '206':
+          description: Requested byte range
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/Error' }
+        '416': { description: Unsatisfiable or multiple byte range }
+
+  /gallery/items/{gallery_item_id}/download:
+    get:
+      tags: [gallery]
+      operationId: getGalleryItemDownload
+      description: Fresh short-lived object-store GET for native media elements; browser session required.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/GalleryItemId' }]
+      responses:
+        '200':
+          description: Download request for a published ready artifact
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GalleryDownloadResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Keyset-paginated job summaries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobPage' }
+    post:
+      tags: [jobs]
+      operationId: submitJob
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitJobRequest' }
+      responses:
+        '202':
+          description: Accepted job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '429': { $ref: '#/components/responses/Error' }
+
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/JobId' }]
+      responses:
+        '200':
+          description: Job with event timeline
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+    delete:
+      tags: [jobs]
+      operationId: cancelJob
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/JobId' }]
+      responses:
+        '200':
+          description: Cancelled job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+
+  /jobs/{job_id}/events:
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - name: after
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Authenticated Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Nagisalake access token or API key
+  parameters:
+    OrgId:
+      name: org_id
+      in: path
+      required: true
+      schema: { type: string }
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: string }
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema: { type: string }
+    ArtifactId:
+      name: artifact_id
+      in: path
+      required: true
+      schema: { type: string }
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema: { type: string }
+    GalleryItemId:
+      name: gallery_item_id
+      in: path
+      required: true
+      schema: { type: string }
+    GalleryLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, format: int32, minimum: 1, maximum: 50, default: 24 }
+    Range:
+      name: Range
+      in: header
+      required: false
+      schema: { type: string, pattern: '^bytes=[0-9]*-[0-9]*$' }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, format: int32, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+  responses:
+    Error:
+      description: Structured API error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    AuthBody:
+      description: Browser session tokens and user
+      headers:
+        Set-Cookie:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthBody' }
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+    Role:
+      type: string
+      enum: [viewer, member, operator, admin, owner]
+    PublicProvider:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [google, github, oidc] }
+    OAuthProvider:
+      $ref: '#/components/schemas/PublicProvider'
+    OAuthIdentity:
+      type: object
+      additionalProperties: true
+    PublicSettings:
+      type: object
+      required: [registration_enabled, password_auth_enabled, max_artifact_bytes, authentication, oauth_providers]
+      properties:
+        registration_enabled: { type: boolean }
+        password_auth_enabled: { type: boolean }
+        max_artifact_bytes: { type: integer, format: int64 }
+        authentication:
+          type: array
+          items: { type: string }
+        oauth_providers:
+          type: array
+          items: { $ref: '#/components/schemas/PublicProvider' }
+    PublicUser:
+      type: object
+      required: [id, email, status, email_verified, created_at]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        status: { type: string }
+        email_verified: { type: boolean }
+        created_at: { type: integer, format: int64 }
+    AuthBody:
+      type: object
+      required: [access_token, token_type, access_expires_at, refresh_expires_at, csrf_token, user, current_organization_id]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        access_expires_at: { type: integer, format: int64 }
+        refresh_expires_at: { type: integer, format: int64 }
+        csrf_token: { type: string }
+        user: { $ref: '#/components/schemas/PublicUser' }
+        current_organization_id: { type: string }
+    MeResponse:
+      type: object
+      required: [user, current_organization_id, memberships, auth_kind]
+      properties:
+        user: { $ref: '#/components/schemas/PublicUser' }
+        current_organization_id: { type: string }
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+        auth_kind: { type: string }
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12 }
+        organization_name: { type: string, maxLength: 120 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        organization_id: { type: string }
+    Membership:
+      type: object
+      required: [organization_id, user_id, role, organization_name]
+      properties:
+        organization_id: { type: string }
+        user_id: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        organization_name: { type: string }
+    OrganizationMember:
+      type: object
+      required: [organization_id, user_id, email, role, created_at]
+      properties:
+        organization_id: { type: string }
+        user_id: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        created_at: { type: integer, format: int64 }
+    OrganizationInvite:
+      type: object
+      required: [id, organization_id, inviter_user_id, code_prefix, role, created_at, expires_at]
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        inviter_user_id: { type: string }
+        code_prefix: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        created_at: { type: integer, format: int64 }
+        expires_at: { type: integer, format: int64 }
+        accepted_at: { type: [integer, 'null'], format: int64 }
+        accepted_by_user_id: { type: [string, 'null'] }
+        revoked_at: { type: [integer, 'null'], format: int64 }
+    CreateOrganizationInviteRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [viewer, member, operator, admin] }
+        expires_in_seconds: { type: integer, format: int64, minimum: 300 }
+    CreatedOrganizationInvite:
+      type: object
+      required: [invite, plaintext]
+      properties:
+        invite: { $ref: '#/components/schemas/OrganizationInvite' }
+        plaintext: { type: string }
+    OrganizationExport:
+      type: object
+      required: [export_version, exported_at, organization]
+      properties:
+        export_version: { type: integer }
+        exported_at: { type: integer, format: int64 }
+        organization: { type: object, additionalProperties: true }
+      additionalProperties: true
+    ApiKey:
+      type: object
+      required: [id, organization_id, creator_user_id, name, prefix, scopes, created_at, last_used_at, expires_at, revoked_at]
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        creator_user_id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        scopes: { type: array, items: { type: string } }
+        created_at: { type: integer, format: int64 }
+        last_used_at: { type: [integer, 'null'], format: int64 }
+        expires_at: { type: [integer, 'null'], format: int64 }
+        revoked_at: { type: [integer, 'null'], format: int64 }
+    CreateApiKeyRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        scopes: { type: array, minItems: 1, items: { type: string } }
+        expires_in_seconds: { type: integer, format: int64, minimum: 60 }
+    CreatedApiKey:
+      type: object
+      required: [key, plaintext]
+      properties:
+        key: { $ref: '#/components/schemas/ApiKey' }
+        plaintext: { type: string }
+    WorkerCredential:
+      type: object
+      required: [id, organization_id, name, token_prefix, created_at, last_used_at, expires_at, revoked_at]
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        owner_user_id: { type: [string, 'null'] }
+        name: { type: string }
+        token_prefix: { type: string }
+        allowed_namespace: { type: [string, 'null'] }
+        created_at: { type: integer, format: int64 }
+        last_used_at: { type: [integer, 'null'], format: int64 }
+        expires_at: { type: [integer, 'null'], format: int64 }
+        revoked_at: { type: [integer, 'null'], format: int64 }
+    CreateWorkerCredentialRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        allowed_namespace: { type: string }
+        expires_in_seconds: { type: integer, format: int64, minimum: 300 }
+    CreatedWorkerCredential:
+      type: object
+      required: [credential, plaintext]
+      properties:
+        credential: { $ref: '#/components/schemas/WorkerCredential' }
+        plaintext: { type: string }
+    QuotaPolicyUpdate:
+      type: object
+      required: [max_concurrent_jobs, max_storage_bytes, max_jobs_per_period, period_seconds]
+      properties:
+        max_concurrent_jobs: { type: integer, format: int64, minimum: 1 }
+        max_storage_bytes: { type: integer, format: int64, minimum: 1 }
+        max_jobs_per_period: { type: integer, format: int64, minimum: 1 }
+        period_seconds: { type: integer, format: int64, minimum: 60 }
+    QuotaSnapshot:
+      allOf:
+        - $ref: '#/components/schemas/QuotaPolicyUpdate'
+        - type: object
+          required: [organization_id, active_jobs, storage_bytes, period_jobs, period_started_at]
+          properties:
+            organization_id: { type: string }
+            active_jobs: { type: integer, format: int64 }
+            storage_bytes: { type: integer, format: int64 }
+            period_jobs: { type: integer, format: int64 }
+            period_started_at: { type: integer, format: int64 }
+    AuditLog:
+      type: object
+      required: [id, action, resource_type, outcome, metadata_json, created_at]
+      properties:
+        id: { type: string }
+        organization_id: { type: [string, 'null'] }
+        actor_id: { type: [string, 'null'] }
+        actor_kind: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: [string, 'null'] }
+        outcome: { type: string }
+        metadata_json: { type: string }
+        created_at: { type: integer, format: int64 }
+    DeviceWorkflow:
+      type: object
+      required: [id, version, output_types]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        output_types: { type: array, items: { type: string } }
+    Device:
+      type: object
+      required: [device_organization_id, device_id, namespace, node_name, worker_version, access_kind, connected, workflows]
+      properties:
+        device_organization_id: { type: string }
+        device_id: { type: string }
+        owner_user_id: { type: [string, 'null'] }
+        namespace: { type: string }
+        node_name: { type: string }
+        worker_version: { type: string }
+        access_kind: { type: string, enum: [owner, shared] }
+        connected: { type: boolean }
+        workflows: { type: array, items: { $ref: '#/components/schemas/DeviceWorkflow' } }
+    CreateDeviceInviteRequest:
+      type: object
+      required: [device_organization_id, device_id]
+      properties:
+        device_organization_id: { type: string }
+        device_id: { type: string }
+        max_uses: { type: integer, minimum: 1 }
+        expires_in_seconds: { type: integer, format: int64, minimum: 300 }
+    CreatedDeviceInvite:
+      type: object
+      required: [invite_id, code, code_prefix, max_uses]
+      properties:
+        invite_id: { type: string }
+        code: { type: string }
+        code_prefix: { type: string }
+        expires_at: { type: [integer, 'null'], format: int64 }
+        max_uses: { type: integer }
+    DeviceGrant:
+      type: object
+      required: [id, device_organization_id, device_id, owner_user_id, grantee_user_id, invite_id, created_at]
+      properties:
+        id: { type: string }
+        device_organization_id: { type: string }
+        device_id: { type: string }
+        owner_user_id: { type: string }
+        grantee_user_id: { type: string }
+        invite_id: { type: string }
+        created_at: { type: integer, format: int64 }
+        revoked_at: { type: [integer, 'null'], format: int64 }
+    RevokeDeviceShareRequest:
+      type: object
+      required: [device_organization_id, device_id, grantee_user_id]
+      properties:
+        device_organization_id: { type: string }
+        device_id: { type: string }
+        grantee_user_id: { type: string }
+    WorkflowInput:
+      type: object
+      required: [name, kind, type, required, options]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [parameter, artifact] }
+        type: { type: string }
+        content_type: { type: [string, 'null'] }
+        required: { type: boolean }
+        default: {}
+        options: { type: array, items: { type: string } }
+    WorkflowManifest:
+      type: object
+      required: [schema_version, display_name, inputs, outputs, warnings]
+      properties:
+        schema_version: { type: integer }
+        display_name: { type: string }
+        description: { type: [string, 'null'] }
+        inputs: { type: array, items: { $ref: '#/components/schemas/WorkflowInput' } }
+        outputs: { type: array, items: { type: object, additionalProperties: true } }
+        warnings: { type: array, items: { type: string } }
+    WorkflowWorker:
+      type: object
+      required: [organization_id, worker_id, parallelism, queue_depth, active_jobs, queued_jobs, available]
+      properties:
+        organization_id: { type: string }
+        worker_id: { type: string }
+        parallelism: { type: integer }
+        queue_depth: { type: integer }
+        active_jobs: { type: integer }
+        queued_jobs: { type: integer }
+        available: { type: boolean }
+    Workflow:
+      type: object
+      required: [id, version, output_types, manifest_consistent, workers, available]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        output_types: { type: array, items: { type: string } }
+        manifest: { $ref: '#/components/schemas/WorkflowManifest' }
+        manifest_consistent: { type: boolean }
+        workers: { type: array, items: { $ref: '#/components/schemas/WorkflowWorker' } }
+        available: { type: boolean }
+    Artifact:
+      type: object
+      required: [id, name, content_type, size_bytes, sha256, state]
+      properties:
+        id: { type: string }
+        job_id: { type: [string, 'null'] }
+        name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        state: { type: string, enum: [pending_upload, ready] }
+    PresignedRequest:
+      type: object
+      required: [method, url, headers, expires_at_unix_ms]
+      properties:
+        method: { type: string }
+        url: { type: string, format: uri }
+        headers: { type: object, additionalProperties: { type: string } }
+        expires_at_unix_ms: { type: integer, format: int64 }
+    UploadResponse:
+      type: object
+      required: [artifact, upload]
+      properties:
+        artifact: { $ref: '#/components/schemas/Artifact' }
+        upload: { $ref: '#/components/schemas/PresignedRequest' }
+    DownloadResponse:
+      type: object
+      required: [artifact, download]
+      properties:
+        artifact: { $ref: '#/components/schemas/Artifact' }
+        download: { $ref: '#/components/schemas/PresignedRequest' }
+    PublishGalleryRequest:
+      type: object
+      required: [artifact_id]
+      properties:
+        artifact_id: { type: string }
+    GalleryArtifact:
+      type: object
+      required: [id, name, content_type, size_bytes, sha256]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    GalleryItem:
+      type: object
+      required: [id, artifact, job_id, workflow_id, workflow_version, display_name, parameters, media_kind, content_url, can_unpublish, published_at_unix_ms]
+      properties:
+        id: { type: string }
+        artifact: { $ref: '#/components/schemas/GalleryArtifact' }
+        job_id: { type: string }
+        workflow_id: { type: string }
+        workflow_version: { type: string }
+        display_name: { type: string }
+        parameters:
+          type: object
+          description: Snapshot filtered to safe generation-control names among parameter-kind manifest inputs.
+          additionalProperties: true
+        media_kind: { type: string, enum: [image, video, audio] }
+        content_url: { type: string, format: uri-reference }
+        can_unpublish:
+          type: boolean
+          description: True when the signed-in user owns the publication; owner identity is never exposed.
+        published_at_unix_ms: { type: integer, format: int64 }
+    GalleryDownloadResponse:
+      type: object
+      required: [download]
+      properties:
+        download: { $ref: '#/components/schemas/PresignedRequest' }
+    GalleryPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GalleryItem' } }
+        next_cursor: { type: [string, 'null'] }
+    CreateUploadRequest:
+      type: object
+      required: [name, content_type, size_bytes, sha256]
+      properties:
+        name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    CompleteUploadRequest:
+      type: object
+      required: [artifact_id, size_bytes, sha256]
+      properties:
+        artifact_id: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    JobEvent:
+      type: object
+      required: [sequence, kind, message, unix_ms]
+      properties:
+        sequence: { type: integer, format: int64 }
+        kind: { type: string, enum: [accepted, running, progress, uploading, completed, failed, cancelled] }
+        progress: { type: [number, 'null'] }
+        message: { type: string }
+        unix_ms: { type: integer, format: int64 }
+    JobSummary:
+      type: object
+      required: [id, workflow_id, workflow_version, parameters, input_artifact_ids, output_artifact_ids, worker_id, session_id, state, created_at_unix_ms, updated_at_unix_ms]
+      properties:
+        id: { type: string }
+        workflow_id: { type: string }
+        workflow_version: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        input_artifact_ids: { type: array, items: { type: string } }
+        output_artifact_ids: { type: array, items: { type: string } }
+        worker_id: { type: string }
+        session_id: { type: string }
+        state: { type: string, enum: [queued, received, accepted, running, uploading, completed, failed, cancelled] }
+        progress: { type: [number, 'null'] }
+        prompt_id: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+        created_at_unix_ms: { type: integer, format: int64 }
+        updated_at_unix_ms: { type: integer, format: int64 }
+    Job:
+      allOf:
+        - $ref: '#/components/schemas/JobSummary'
+        - type: object
+          required: [events]
+          properties:
+            events: { type: array, items: { $ref: '#/components/schemas/JobEvent' } }
+    SubmitJobRequest:
+      type: object
+      required: [workflow_id, workflow_version, parameters, input_artifact_ids]
+      properties:
+        workflow_id: { type: string }
+        workflow_version: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        input_artifact_ids: { type: array, items: { type: string } }
+        device_organization_id: { type: string }
+        device_id: { type: string }
+    JobPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/JobSummary' } }
+        next_cursor: { type: [string, 'null'] }
+    AuditLogPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditLog' } }
+        next_cursor: { type: [string, 'null'] }
+    ApiKeyPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ApiKey' } }
+        next_cursor: { type: [string, 'null'] }
+    WorkerCredentialPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WorkerCredential' } }
+        next_cursor: { type: [string, 'null'] }
+    DevicePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Device' } }
+        next_cursor: { type: [string, 'null'] }
+    WorkflowPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Workflow' } }
+        next_cursor: { type: [string, 'null'] }

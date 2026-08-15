@@ -1,0 +1,79 @@
+# 局域网 Worker 配置模板。
+#
+# 拷到运行 ComfyUI 的那台机器上，改三处：
+#   1. hub.url    -> Hub 所在主机的局域网地址
+#   2. hub.token  -> 控制台「凭据 / Worker 凭据」里签发的 nwk_ 明文
+#   3. worker.namespace / node_name -> 这台设备的标识
+#
+# Worker 只建立出站连接，所以这台机器不需要开放任何入站端口。
+
+work_dir = "./worker-state/work"
+
+[hub]
+# 注意是 ws://（生产必须 wss://），路径固定为 /v1/worker/connect。
+url = "ws://192.168.31.102:9091/v1/worker/connect"
+reconnect_max_seconds = 30
+connect_timeout_seconds = 15
+max_frame_bytes = 1048576
+# 控制台签发的 nwk_ 凭据，明文只显示一次。生产改用 NAGISALAKE_WORKER_TOKEN
+# 环境变量，不要写进文件。
+token = "replace-with-your-nwk-token"
+
+# 只有 Hub 证书由私有 CA 签发时才需要这一节。证书来自公共 CA（Let's Encrypt 等）
+# 时把 url 改成 wss:// 就够了，内置公共根证书会完成校验。
+#
+# 路径按本 TOML 文件所在目录解析；每次重连都会重新读取，所以轮换证书不用重启。
+# 这里必须放 CA 证书：自签名的服务器证书没有 CA:TRUE，不能当信任根用。
+#
+# [hub.tls]
+# ca_certificates = ["./tls/hub-ca.pem"]
+
+[worker]
+# 必须与 nwk_ 凭据的 allowed_namespace 一致，否则注册会被拒绝。
+namespace = "home-gpu"
+# namespace + node_name 在一个组织内唯一，决定了设备身份。改名等于换一台新设备。
+node_name = "comfyui-01"
+parallelism = 1
+# Worker 最多再接收 4 个等待项；设为 0 可保持旧版“满载即拒绝”的行为。
+queue_depth = 4
+
+[worker.labels]
+gpu = "rtx-4090"
+location = "lan"
+
+[state]
+# 相对路径按本 TOML 文件所在目录解析。
+sqlite_url = "sqlite://worker-state/worker.db"
+
+[comfyui]
+# ComfyUI 与 Worker 同机，所以这里是回环地址。
+base_url = "http://127.0.0.1:8188"
+poll_interval_ms = 1000
+request_timeout_seconds = 60
+max_output_bytes = 5368709120
+
+# 只有显式列在这里的 workflow 才会注册给 Hub。调用方永远不能提交任意
+# workflow JSON，公共契约就是下面这些字段。
+[[workflows]]
+id = "sdxl-txt2img"
+version = "v1"
+file = "./workflows/sdxl-txt2img-api.json"
+output_types = ["image/png"]
+
+# 左边是公共参数名，右边是 workflow JSON 里的 JSON Pointer。
+[workflows.parameters]
+prompt = "/6/inputs/text"
+negative_prompt = "/5/inputs/text"
+seed = "/3/inputs/seed"
+steps = "/3/inputs/steps"
+width = "/7/inputs/width"
+height = "/7/inputs/height"
+
+# 需要输入文件时这样声明。index 从 0 开始且必须连续：提交作业时
+# input_artifact_ids 是位置数组，第 N 个 ID 对应 index = N 的绑定。
+#
+# [[workflows.inputs]]
+# index = 0
+# name = "source_image"
+# content_type = "image/*"
+# pointer = "/10/inputs/image"

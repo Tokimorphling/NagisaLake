@@ -1,0 +1,312 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
+
+jobs:
+  # Builds the console and publishes web/dist, which the Rust job needs for the
+  # embed-web feature.
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+          if-no-files-found: error
+
+  rust:
+    name: Clippy and tests
+    runs-on: ubuntu-latest
+    needs: frontend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nagisalake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Without this the PostgreSQL integration tests silently skip.
+      NAGISALAKE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/nagisalake_test
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml selects the channel; this materialises it up front so
+      # the toolchain lives in exactly one place and a resolution failure lands
+      # here rather than halfway through clippy.
+      - name: Install Rust
+        run: rustc --version && cargo clippy --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nagisalake
+
+      # pyo3 needs an interpreter and headers to compile the worker's python feature.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # embed-web compiles web/dist into the binary, so it must exist before any
+      # cargo invocation that enables the feature. build.rs fails loudly otherwise.
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Verify the frontend artifact landed
+        run: test -f web/dist/index.html
+
+      # SQLx hashes the complete migration file, including comments and
+      # whitespace. Version 11 has already shipped to production and must stay
+      # byte-for-byte stable; schema changes belong in a new migration.
+      - name: Verify immutable migration checksums
+        run: |
+          sha384sum --check --strict crates/nagisalake-hub-store/migrations/SHA384SUMS
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-targets
+
+      # Covers the embedded-console tests: static assets, SPA fallback, cache
+      # headers and the API-404 boundary.
+      - name: Test with the embedded console
+        run: cargo test -p nagisalake-hub --features embed-web
+
+      # The worker's python feature links libpython, which is not on the runtime
+      # library path, so `cargo test --all-features` fails at load time. The
+      # project convention is to type-check this feature instead of running it.
+      - name: Check the ComfyUI python extension
+        run: cargo check -p nagisalake-worker --features python
+
+  # Proves the documented single-binary release path still works end to end.
+  release-binary:
+    name: Release binary with embedded console
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nagisalake-release
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Build
+        run: cargo build --profile release-lto -p nagisalake-hub --features embed-web
+
+      - name: Assert the console is served from the binary alone
+        run: |
+          set -euo pipefail
+          # Remove the source assets so a pass can only come from the binary.
+          rm -rf web/dist
+          cat > /tmp/ci-hub.toml <<'TOML'
+          [server]
+          listen = "127.0.0.1:9091"
+          [auth]
+          worker_token = "ci-worker-token"
+          consumer_token = "ci-consumer-token"
+          [browser]
+          registration_enabled = false
+          cookie_secure = false
+          [transport]
+          max_frame_bytes = 1048576
+          max_artifact_bytes = 1048576
+          TOML
+
+          ./target/release-lto/nagisalake-hub --config /tmp/ci-hub.toml &
+          hub_pid=$!
+          trap 'kill "$hub_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -fsS -m 2 http://127.0.0.1:9091/healthz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS -m 5 http://127.0.0.1:9091/healthz
+
+          # The shell must come back as HTML from the embedded assets.
+          shell_type=$(curl -fsS -m 5 -o /tmp/shell.html -w '%{content_type}' http://127.0.0.1:9091/)
+          case "$shell_type" in
+            text/html*) ;;
+            *) echo "expected HTML at /, got $shell_type" >&2; exit 1 ;;
+          esac
+          grep -q 'id="root"' /tmp/shell.html
+
+          # A client-side route must fall back to the same shell.
+          deep_status=$(curl -fsS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:9091/jobs/abc)
+          test "$deep_status" = "200"
+
+          # API paths must stay JSON, never the SPA shell.
+          api_type=$(curl -s -m 5 -o /tmp/api.json -w '%{content_type}' http://127.0.0.1:9091/api/v1/nope)
+          case "$api_type" in
+            application/json*) ;;
+            *) echo "expected JSON at /api/v1/nope, got $api_type" >&2; exit 1 ;;
+          esac
+          grep -q '"not_found"' /tmp/api.json
+
+          echo "embedded console verified from the binary alone"
+
+  # The upload reliability fix lives in the Worker runtime, not the Hub image.
+  # Publish a native Linux x86_64 binary so GPU nodes can upgrade to the exact
+  # revision that passed this workflow instead of rebuilding an unlabelled
+  # 0.1.0 binary by hand.
+  release-worker:
+    name: Release Linux x86_64 Worker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nagisalake-worker-release
+
+      - name: Build
+        run: cargo build --profile release-lto -p nagisalake-worker-cli --bin nagisalake-worker
+
+      - name: Package revisioned binary
+        run: |
+          set -euo pipefail
+          binary_name="nagisalake-worker-linux-amd64-${GITHUB_SHA}"
+          package_root="dist/package"
+          archive="dist/${binary_name}.tar.gz"
+          install -Dm755 target/release-lto/nagisalake-worker \
+            "${package_root}/${binary_name}"
+          (
+            cd "${package_root}"
+            sha256sum "${binary_name}" > "${binary_name}.sha256"
+          )
+          tar -C "${package_root}" -czf "${archive}" \
+            "${binary_name}" "${binary_name}.sha256"
+
+          # Exercise exactly what operators download: extraction must restore
+          # the executable bit and the checksum must use artifact-root names.
+          mkdir -p dist/smoke
+          tar -C dist/smoke -xzf "${archive}"
+          (
+            cd dist/smoke
+            sha256sum --check "${binary_name}.sha256"
+            test -x "${binary_name}"
+            "./${binary_name}" --help >/dev/null
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nagisalake-worker-linux-amd64-${{ github.sha }}
+          path: dist/nagisalake-worker-linux-amd64-${{ github.sha }}.tar.gz
+          retention-days: 30
+          if-no-files-found: error
+
+  publish-image:
+    name: Publish Hub image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [rust, release-binary]
+    # A native arm64 runner. Building linux/arm64 on an x86 runner puts the whole
+    # Dockerfile behind QEMU, which costs roughly an order of magnitude on a
+    # compile-bound image like this one.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/nagisalake-hub
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Native to the runner above; stated so a runner change fails loudly
+          # rather than silently emitting an amd64 image.
+          platforms: linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # mode=max also caches the intermediate build stages, which is the
+          # point here: it preserves the cooked dependency layer between runs.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

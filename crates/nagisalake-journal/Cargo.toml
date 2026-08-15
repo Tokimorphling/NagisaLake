@@ -1,0 +1,18 @@
+[package]
+name = "nagisalake-journal"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nagisalake-core = { workspace = true }
+nagisalake-protocol = { workspace = true }
+serde_json = { workspace = true }
+service-async = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio", "sqlite-bundled"] }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]

@@ -1,0 +1,37 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://nagisalake.tokilake.abrdns.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "range"
+    ],
+    "ExposeHeaders": [
+      "ETag",
+      "Accept-Ranges",
+      "Content-Length",
+      "Content-Range"
+    ],
+    "MaxAgeSeconds": 3600
+  },
+  {
+    "AllowedOrigins": [
+      "https://nagisalake.tokilake.abrdns.com"
+    ],
+    "AllowedMethods": [
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "content-type",
+      "x-amz-meta-sha256"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
