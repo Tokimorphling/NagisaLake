@@ -38,7 +38,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: '工作台',
     items: [
-      { to: '/', label: '概览', icon: IconDashboard },
+      { to: '/console', label: '概览', icon: IconDashboard },
       { to: '/workflows', label: 'Workflow', icon: IconWorkflow },
       { to: '/jobs', label: '作业', icon: IconJobs },
       { to: '/gallery', label: '公共 Gallery', icon: IconGallery },

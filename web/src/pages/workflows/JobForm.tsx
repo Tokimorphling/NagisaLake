@@ -1,58 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { endpoints } from '@/api/endpoints'
-import { keys, useArtifactDownload } from '@/api/queries'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useArtifactDownload } from '@/api/queries'
 import type { Device, Job, Workflow, WorkflowInput } from '@/api/types'
-import { uploadArtifact } from '@/api/upload'
-import type { UploadProgress } from '@/api/upload'
 import { formatBytes } from '@/lib/format'
 import { submitBlockedReason, workflowCapacity } from '@/lib/workflow-status'
-import { randomUuid } from '@/lib/platform'
-import { useAuth } from '@/state/auth'
-import { useToast } from '@/state/toast'
 import { Badge } from '@/components/ui/display'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Checkbox, Field, Input, Select, Textarea, cx } from '@/components/ui/primitives'
-
-/** A device target the job can be pinned to, derived from the workflow's workers. */
-interface DeviceTarget {
-  key: string
-  organizationId: string
-  deviceId: string
-  label: string
-  available: boolean
-}
-
-function isNumeric(type: string): boolean {
-  return type === 'integer' || type === 'number'
-}
-
-function defaultParameterValue(input: WorkflowInput): string {
-  if (input.default === null || input.default === undefined) return ''
-  if (typeof input.default === 'object') return JSON.stringify(input.default)
-  return String(input.default)
-}
-
-function initialParameterValues(
-  parameters: WorkflowInput[],
-  remixJob?: Job | null,
-  galleryRemix?: GalleryRemixSeed | null,
-): Record<string, string> {
-  return Object.fromEntries(
-    parameters.map((input) => {
-      const source = remixJob?.parameters ?? galleryRemix?.parameters
-      if (source && input.name in source) {
-        const value = source[input.name]
-        return [
-          input.name,
-          typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value),
-        ]
-      }
-      return [input.name, defaultParameterValue(input)]
-    }),
-  )
-}
+import { useGenerationDraft, acceptsFile, isNumeric } from '@/features/studio/hooks/useGenerationDraft'
+import { useGenerationSubmit, type DeviceTarget } from '@/features/studio/hooks/useGenerationSubmit'
 
 export interface GalleryRemixSeed {
   itemId: string
@@ -60,37 +15,6 @@ export interface GalleryRemixSeed {
   parameters: Record<string, unknown>
 }
 
-/** Mirrors the useful subset of the native file input `accept` matching rules. */
-function acceptsFile(file: File, accept?: string | null): boolean {
-  if (!accept?.trim()) return true
-  const fileName = file.name.toLowerCase()
-  return accept.split(',').some((raw) => {
-    const rule = raw.trim().toLowerCase()
-    if (!rule) return false
-    if (rule.startsWith('.')) return fileName.endsWith(rule)
-    if (rule.endsWith('/*')) return file.type.startsWith(rule.slice(0, -1))
-    return file.type.toLowerCase() === rule
-  })
-}
-
-/** Coerces a form string back into the JSON type the manifest declares. */
-function coerceParameter(input: WorkflowInput, raw: string): unknown {
-  const trimmed = raw.trim()
-  switch (input.type) {
-    case 'integer': {
-      const value = Number.parseInt(trimmed, 10)
-      return Number.isFinite(value) ? value : null
-    }
-    case 'number': {
-      const value = Number.parseFloat(trimmed)
-      return Number.isFinite(value) ? value : null
-    }
-    case 'boolean':
-      return trimmed === 'true'
-    default:
-      return raw
-  }
-}
 
 export function JobForm({
   workflow,
@@ -99,6 +23,7 @@ export function JobForm({
   onClose,
   remixJob,
   galleryRemix,
+  initialParameters,
 }: {
   workflow: Workflow
   devices: Device[]
@@ -106,12 +31,9 @@ export function JobForm({
   onClose: () => void
   remixJob?: Job | null
   galleryRemix?: GalleryRemixSeed | null
+  /** Optional friendly Studio values, merged into the manifest-backed form. */
+  initialParameters?: Record<string, unknown>
 }) {
-  const { organizationId } = useAuth()
-  const toast = useToast()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-
   const manifest = workflow.manifest
   const parameters = useMemo(
     () => manifest?.inputs.filter((input) => input.kind === 'parameter') ?? [],
@@ -144,10 +66,7 @@ export function JobForm({
     return [...byKey.values()]
   }, [devices, workflow.workers])
 
-  const seededValues = useMemo(
-    () => initialParameterValues(parameters, remixJob, galleryRemix),
-    [galleryRemix, parameters, remixJob],
-  )
+  const seedParameters = initialParameters ?? remixJob?.parameters ?? galleryRemix?.parameters
   const seededArtifactIds = useMemo(
     () =>
       Object.fromEntries(
@@ -159,13 +78,22 @@ export function JobForm({
     [artifacts, remixJob],
   )
 
-  const [values, setValues] = useState<Record<string, string>>(() => seededValues)
-  const [files, setFiles] = useState<Record<string, File | null>>({})
-  const [existingArtifactIds, setExistingArtifactIds] =
-    useState<Record<string, string>>(() => seededArtifactIds)
-  const [target, setTarget] = useState('')
-  const [progress, setProgress] = useState<UploadProgress | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const draft = useGenerationDraft({
+    parameters,
+    artifacts,
+    seedParameters,
+    seededArtifactIds,
+  })
+  const {
+    values,
+    setValues,
+    files,
+    setFiles,
+    existingArtifactIds,
+    setExistingArtifactIds,
+    target,
+    setTarget,
+  } = draft
   const [globalDragging, setGlobalDragging] = useState(false)
   const dragDepth = useRef(0)
 
@@ -174,56 +102,7 @@ export function JobForm({
   // about a device that is merely busy.
   const blockedReason = submitBlockedReason(workflow, capacity)
 
-  // Count required artifact inputs that have neither a freshly picked file
-  // nor a pre-existing artifact id. The submit button is disabled while any
-  // are missing so the user gets immediate feedback rather than a toast error
-  // after pressing submit.
-  const missingRequiredCount = useMemo(
-    () =>
-      artifacts.filter(
-        (input) =>
-          input.required &&
-          !files[input.name] &&
-          !existingArtifactIds[input.name],
-      ).length,
-    [artifacts, files, existingArtifactIds],
-  )
-  const missingParamsCount = useMemo(
-    () =>
-      parameters.filter((input) => input.required && (values[input.name] ?? '').trim() === '').length,
-    [parameters, values],
-  )
-  const missingCount = missingRequiredCount + missingParamsCount
-
-  const reset = () => {
-    setValues(seededValues)
-    setFiles({})
-    setExistingArtifactIds(seededArtifactIds)
-    setTarget('')
-    setProgress(null)
-  }
-
-  const assignDroppedFiles = useCallback(
-    (incoming: File[]) => {
-      const remaining = [...incoming]
-      const assigned: Record<string, File> = {}
-
-      for (const input of artifacts) {
-        const matchIndex = remaining.findIndex((file) => acceptsFile(file, input.content_type))
-        if (matchIndex === -1) continue
-        assigned[input.name] = remaining.splice(matchIndex, 1)[0]
-      }
-
-      const count = Object.keys(assigned).length
-      if (count === 0) {
-        toast.error('没有匹配的文件', '请检查 manifest 声明的输入媒体类型')
-        return
-      }
-      setFiles((current) => ({ ...current, ...assigned }))
-      toast.info(`已放入 ${count} 个输入文件`)
-    },
-    [artifacts, toast],
-  )
+  const missingCount = draft.missingCount
 
   // A drag that enters anywhere over the page gets a full-screen target. This
   // is especially helpful for tall parameter forms where a field may be below
@@ -250,7 +129,7 @@ export function JobForm({
       event.preventDefault()
       dragDepth.current = 0
       setGlobalDragging(false)
-      assignDroppedFiles(Array.from(event.dataTransfer?.files ?? []))
+      draft.assignDroppedFiles(Array.from(event.dataTransfer?.files ?? []))
     }
     document.addEventListener('dragenter', onDragEnter)
     document.addEventListener('dragover', onDragOver)
@@ -262,74 +141,22 @@ export function JobForm({
       document.removeEventListener('dragleave', onDragLeave)
       document.removeEventListener('drop', onDrop)
     }
-  }, [artifacts.length, assignDroppedFiles, open])
+  }, [artifacts.length, draft.assignDroppedFiles, open])
 
-  const submit = async () => {
-    setSubmitting(true)
-    try {
-      // Upload in manifest order so index N lands on binding N. The worker
-      // rejects any submission whose artifact count differs from its bindings,
-      // so a gap here is a hard error rather than a skip.
-      const artifactIds: string[] = []
-      const uploadCount = artifacts.length
-      for (const input of artifacts) {
-        const file = files[input.name]
-        if (file) {
-          const fileIndex = artifactIds.length + 1
-          artifactIds.push(
-            await uploadArtifact(file, setProgress, {
-              fileIndex,
-              fileTotal: uploadCount,
-            }),
-          )
-          continue
-        }
-        const existingArtifactId = existingArtifactIds[input.name]
-        if (!existingArtifactId) throw new Error(`输入 ${input.name} 缺少文件`)
-        artifactIds.push(existingArtifactId)
-      }
-      setProgress(null)
-
-      const payload: Record<string, unknown> = {}
-      for (const input of parameters) {
-        const raw = values[input.name] ?? ''
-        // Omit untouched optional parameters so the worker template default wins.
-        if (!input.required && raw.trim() === '') continue
-        const coerced = coerceParameter(input, raw)
-        if (coerced === null && isNumeric(input.type)) {
-          throw new Error(`参数 ${input.name} 需要一个${input.type === 'integer' ? '整数' : '数字'}`)
-        }
-        payload[input.name] = coerced
-      }
-
-      const chosen = targets.find((candidate) => candidate.key === target)
-      const job = await endpoints.submitJob(
-        {
-          workflow_id: workflow.id,
-          workflow_version: workflow.version,
-          parameters: payload,
-          input_artifact_ids: artifactIds,
-          device_organization_id: chosen?.organizationId,
-          device_id: chosen?.deviceId,
-        },
-        randomUuid(),
-      )
-
-      void queryClient.invalidateQueries({ queryKey: keys.jobs(organizationId) })
-      void queryClient.invalidateQueries({ queryKey: keys.workflows(organizationId) })
-      void queryClient.invalidateQueries({ queryKey: keys.quota(organizationId) })
-      toast.success('作业已成功提交', job.id)
-      reset()
+  const { progress, submitting, submit } = useGenerationSubmit({
+    workflow,
+    parameters,
+    artifacts,
+    targets,
+    values,
+    files,
+    existingArtifactIds,
+    target,
+    onSubmitted: () => {
+      draft.reset()
       onClose()
-      navigate(`/jobs/${job.id}`)
-    } catch (error) {
-      if (error instanceof Error && !('code' in error)) toast.error('提交失败', error.message)
-      else toast.fromError(error, '提交作业失败')
-    } finally {
-      setSubmitting(false)
-      setProgress(null)
-    }
-  }
+    },
+  })
 
   const progressLabel = progress
     ? { hashing: '计算校验和', uploading: '上传中', completing: '校验中' }[progress.stage]
@@ -358,7 +185,7 @@ export function JobForm({
       onClose={onClose}
       footer={
         <div className="flex items-center justify-between w-full">
-          <Button size="sm" variant="ghost" onClick={reset} disabled={submitting}>
+          <Button size="sm" variant="ghost" onClick={draft.reset} disabled={submitting}>
             重置表单
           </Button>
           <div className="flex items-center gap-2">

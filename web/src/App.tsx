@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '@/state/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { StudioLayout } from '@/components/layout/StudioLayout'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { IconLogo } from '@/components/layout/icons'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -27,6 +28,7 @@ const QuotaPage = lazy(() => import('@/pages/QuotaPage').then((m) => ({ default:
 const AuditPage = lazy(() => import('@/pages/AuditPage').then((m) => ({ default: m.AuditPage })))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const GalleryPage = lazy(() => import('@/pages/GalleryPage').then((m) => ({ default: m.GalleryPage })))
+const StudioPage = lazy(() => import('@/pages/studio/StudioPage').then((m) => ({ default: m.StudioPage })))
 
 function RouteFallback() {
   return (
@@ -70,8 +72,20 @@ export function App() {
     <NotificationProvider>
       <ErrorBoundary>
         <Routes>
+          <Route element={<StudioLayout />}>
+            <Route path="/studio" element={<Navigate to="/studio/video" replace />} />
+            <Route
+              path="/studio/:media"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <StudioPage />
+                </Suspense>
+              }
+            />
+          </Route>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<Navigate to="/studio/video" replace />} />
+            <Route path="/console" element={<DashboardPage />} />
             <Route
               path="/workflows"
               element={
