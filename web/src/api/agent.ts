@@ -51,11 +51,18 @@ export async function streamAgentRun(
     throw new Error('Hub 没有返回 Agent 事件流')
   }
   let terminal = false
-  await consumeSse(response, (_name, data) => {
-    const event = parseEvent(data)
-    if (terminal) return
-    terminal = event.type === 'completed' || event.type === 'error' || event.type === 'cancelled'
-    onEvent(event)
-  })
+  try {
+    await consumeSse(response, (_name, data) => {
+      if (terminal) return
+      const event = parseEvent(data)
+      onEvent(event)
+      terminal = event.type === 'completed' || event.type === 'error' || event.type === 'cancelled'
+    }, () => terminal)
+  } catch (error) {
+    // A valid terminal event is authoritative even if the HTTP connection
+    // resets immediately afterwards. Callback errors still propagate because
+    // terminal is set only after the callback has returned successfully.
+    if (!terminal) throw error
+  }
   if (!terminal && !signal.aborted) throw new Error('Agent 连接中断，未收到最终结果；请勿自动重试')
 }

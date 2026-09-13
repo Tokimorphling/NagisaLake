@@ -1,0 +1,101 @@
+/* Studio is deliberately quieter than the console. It inherits the user's
+   light/dark preference rather than hard-coding the reference site's colors. */
+.studio-shell {
+  --studio-highlight: color-mix(in oklab, var(--app-accent) 42%, var(--app-surface));
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.studio-rail { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; overflow-y: auto; padding: 22px 6px 12px; border-right: 1px solid var(--app-border); background: var(--app-surface); }
+.studio-rail-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 60px; min-height: 62px; border-radius: 18px; color: var(--app-muted); font-size: 10px; transition: background 150ms, color 150ms; }
+.studio-rail-link:hover { background: var(--app-surface-2); color: var(--app-text); }
+.studio-rail-link.is-active { color: var(--app-text); background: var(--studio-highlight); font-weight: 600; }
+.studio-rail-link svg { width: 21px; height: 21px; }
+.studio-rail-link span { white-space: nowrap; }
+.studio-rail-account { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 60px; min-height: 52px; border-radius: 10px; }
+.studio-rail-account:hover { background: var(--app-surface-2); }
+.studio-rail-tool { display: grid; width: 42px; height: 38px; place-items: center; color: var(--app-muted); border-radius: 12px; }
+.studio-rail-tool:hover { background: var(--app-surface-2); color: var(--app-text); }
+.studio-page { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.studio-workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: clamp(360px, 40vw, 760px) minmax(0, 1fr); }
+.studio-composer { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--app-border); background: var(--app-surface); }
+.studio-composer-body { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 18px; overflow-y: auto; padding: 22px 24px 18px; }
+.studio-pane-header { display: flex; align-items: center; gap: 12px; min-height: 68px; flex-shrink: 0; padding: 12px 24px; border-bottom: 1px solid var(--app-border); background: var(--app-surface); }
+.studio-media-tabs { display: flex; align-items: stretch; justify-content: space-around; min-height: 68px; flex-shrink: 0; border-bottom: 1px solid var(--app-border); padding: 0 12px; }
+.studio-media-tab { position: relative; display: flex; align-items: center; justify-content: center; padding: 0 10px; white-space: nowrap; font-size: 13px; color: var(--app-muted); }
+.studio-media-tab:hover { color: var(--app-text); }
+.studio-media-tab.is-active { color: var(--app-text); font-weight: 650; }
+.studio-media-tab.is-active::after { content: ''; position: absolute; bottom: 0; height: 3px; left: 18%; right: 18%; border-radius: 3px; background: var(--app-text); }
+.studio-model-select { display: flex; align-items: center; gap: 12px; border-radius: 16px; border: 1px solid transparent; padding: 14px; background: var(--app-surface-2); }
+.studio-model-select:focus-within { border-color: var(--app-accent); }
+.studio-model-select select { min-width: 0; width: 100%; cursor: pointer; background: transparent; color: var(--app-text); font-size: 13px; font-weight: 600; outline: none; }
+.studio-model-select option { background: var(--app-surface); color: var(--app-text); }
+.studio-editor-group { display: flex; flex: 1; min-height: 270px; flex-direction: column; }
+.studio-prompt-editor { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--app-border); border-radius: 18px; box-shadow: 0 2px 3px rgb(0 0 0 / .035); background: var(--app-surface); transition: border-color 150ms; }
+.studio-prompt-editor:focus-within { border-color: color-mix(in oklab, var(--app-accent) 60%, var(--app-border)); }
+.studio-prompt-editor textarea { flex: 1; width: 100%; min-height: 200px; resize: none; border: 0; background: transparent; outline: none; padding: 20px; font-size: 14px; line-height: 1.85; color: var(--app-text); }
+.studio-prompt-editor textarea::placeholder { color: var(--app-subtle); }
+.studio-editor-tools { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 16px; }
+.studio-text-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; color: var(--app-muted); font-size: 12px; white-space: nowrap; border-radius: 6px; }
+.studio-text-action:hover { color: var(--app-text); }
+.studio-text-action:disabled { opacity: .4; cursor: not-allowed; }
+.studio-switch { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; color: var(--app-muted); min-height: 32px; }
+.studio-switch-track { display: inline-flex; width: 32px; height: 19px; align-items: center; padding: 2px; border-radius: 20px; background: var(--app-border-strong); transition: background 150ms; }
+.studio-switch[aria-checked='true'] .studio-switch-track { background: var(--studio-highlight); }
+.studio-switch-track::after { content: ''; width: 15px; height: 15px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgb(0 0 0 / .12); transition: transform 150ms; }
+.studio-switch[aria-checked='true'] .studio-switch-track::after { transform: translateX(13px); }
+.studio-switch:disabled { opacity: .5; cursor: not-allowed; }
+.studio-composer-footer { flex-shrink: 0; border-top: 1px solid var(--app-border); padding: 15px 24px 20px; background: var(--app-surface); }
+.studio-submit { min-height: 48px; border-radius: 14px; background: var(--studio-highlight); color: var(--app-text); font-weight: 650; box-shadow: none; }
+.studio-submit:hover:not(:disabled) { background: color-mix(in oklab, var(--app-accent) 55%, var(--app-surface)); }
+.studio-results { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--app-bg); }
+.studio-results-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
+.studio-result-tabs { display: inline-flex; gap: 3px; flex-shrink: 0; max-width: 100%; overflow-x: auto; border-radius: 14px; padding: 4px; background: var(--app-surface-2); }
+.studio-search { min-width: 180px; }
+.studio-result-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 12px; border-radius: 10px; font-size: 12px; color: var(--app-muted); white-space: nowrap; }
+.studio-result-tab[aria-pressed='true'] { background: var(--studio-highlight); color: var(--app-text); font-weight: 600; }
+.studio-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 56px 20px; min-height: 300px; text-align: center; color: var(--app-text); }
+.studio-empty-mark { display: grid; place-items: center; width: 78px; height: 78px; margin-bottom: 8px; border: 1px solid var(--app-border); border-radius: 24px; background: var(--app-surface); color: var(--app-accent); box-shadow: 8px 8px 0 -3px var(--app-surface-2), 0 4px 18px rgb(0 0 0 / .03); transform: rotate(-5deg); }
+.studio-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid var(--app-border); border-radius: 7px; font-size: 10px; background: var(--app-surface); white-space: nowrap; }
+.studio-result-card, .studio-agent-result { overflow: hidden; border: 1px solid var(--app-border); border-radius: 18px; background: var(--app-surface); box-shadow: 0 8px 28px -16px rgb(0 0 0 / .15); }
+.studio-agent-result--compact { border-radius: 12px; box-shadow: none; }
+.studio-output-section { padding: 15px 17px; border: 1px solid var(--app-border); border-radius: 12px; background: color-mix(in oklab, var(--app-surface-2) 50%, transparent); }
+.studio-media-stage { display: flex; position: relative; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: 240px; max-height: 65dvh; aspect-ratio: 16/9; background: color-mix(in oklab, var(--app-surface-2) 80%, black); overflow: hidden; }
+.studio-media-stage > img, .studio-media-stage > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.studio-job-row { display: flex; width: 100%; align-items: center; gap: 12px; padding: 13px 14px; text-align: left; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface); transition: border-color 150ms, background 150ms; }
+.studio-job-row:hover { border-color: var(--app-border-strong); }
+.studio-job-row[aria-pressed='true'] { border-color: color-mix(in oklab, var(--app-accent) 65%, var(--app-border)); background: color-mix(in oklab, var(--app-accent) 5%, var(--app-surface)); }
+.studio-mobile-switch { display: none; }
+@media (max-width: 1100px) and (min-width: 1024px) {
+  .studio-pane-header, .studio-results-scroll { padding-left: 16px; padding-right: 16px; }
+  .studio-result-tab { padding-left: 8px; padding-right: 8px; }
+}
+@media (max-width: 1023px) {
+  .studio-workspace { display: flex; flex-direction: column; }
+  .studio-mobile-switch { display: flex; flex-shrink: 0; gap: 4px; border-bottom: 1px solid var(--app-border); padding: 7px 14px; background: var(--app-surface); }
+  .studio-mobile-switch button { flex: 1; min-height: 34px; border-radius: 8px; font-size: 12px; color: var(--app-muted); }
+  .studio-mobile-switch button[aria-pressed='true'] { background: var(--studio-highlight); color: var(--app-text); font-weight: 600; }
+  .studio-composer, .studio-results { flex: 1; border-right: 0; }
+  .studio-pane-mobile-hidden { display: none; }
+  .studio-pane-header, .studio-media-tabs { min-height: 58px; }
+  .studio-editor-group { min-height: 240px; }
+}
+@media (max-width: 639px) {
+  .studio-shell { grid-template-columns: 54px minmax(0, 1fr); }
+  .studio-rail { padding: 14px 2px 10px; gap: 8px; }
+  .studio-rail-link { width: 46px; min-height: 57px; border-radius: 14px; gap: 5px; font-size: 9px; }
+  .studio-rail-link svg { width: 19px; height: 19px; }
+  .studio-rail-tool { width: 40px; }
+  .studio-rail-account { width: 46px; }
+  body:has(.studio-shell) [data-toast-region] { top: calc(48px + env(safe-area-inset-top)); bottom: auto; left: 54px; right: 0; padding: 8px; }
+  .studio-composer-body, .studio-results-scroll { padding: 16px 14px; }
+  .studio-composer-footer { padding: 12px 14px 16px; }
+  .studio-pane-header { padding: 10px 12px; gap: 8px; }
+  .studio-media-tabs { padding: 0 4px; }
+  .studio-media-tab { padding: 0 5px; font-size: 12px; }
+  .studio-prompt-editor textarea { padding: 14px; }
+  .studio-result-tab { padding: 0 6px; font-size: 11px; }
+  .studio-media-stage { min-height: 170px; }
+}

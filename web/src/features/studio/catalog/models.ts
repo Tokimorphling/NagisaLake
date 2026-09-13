@@ -1,104 +1,76 @@
-import type { Workflow } from '@/api/types'
+import type { GalleryItem, JobSummary, Workflow } from '@/api/types'
 
 export type StudioMedia = 'video' | 'image' | 'audio' | 'avatar'
+export type StudioInputMode = 'all' | 'text' | 'reference'
+export const MEDIA_LABELS: Record<StudioMedia, string> = { video: '视频生成', image: '图片生成', audio: '音频生成', avatar: '数字人' }
+export const STUDIO_MEDIA: StudioMedia[] = ['avatar', 'video', 'image', 'audio']
 
-export interface StudioMode {
-  id: string
-  label: string
-  description: string
-  aliases: string[]
+export function isStudioMedia(value: string | undefined): value is StudioMedia {
+  return STUDIO_MEDIA.includes(value as StudioMedia)
 }
+export function workflowKey(workflow: Pick<Workflow, 'id' | 'version'>) { return JSON.stringify([workflow.id, workflow.version]) }
+export function workflowTitle(workflow: Workflow) { return workflow.manifest?.display_name || workflow.id }
 
-export interface StudioModel {
-  id: string
-  name: string
-  description: string
-  media: StudioMedia
-  modes: StudioMode[]
-}
-
-/**
- * Presentation-only catalog. Workflow ids and manifest fields remain owned by
- * the Hub; aliases simply help the friendly Studio labels find a matching
- * workflow when a Worker publishes it.
- */
-export const STUDIO_MODELS: StudioModel[] = [
-  {
-    id: 'minimax-h3',
-    name: 'MiniMax H3',
-    description: '高质量文生与参考图生视频',
-    media: 'video',
-    modes: [
-      { id: 't2v', label: '文生视频', description: '从文字描述生成视频', aliases: ['t2v', 'text-to-video', 'text2video'] },
-      { id: 'i2v', label: '图生视频', description: '让一张图片动起来', aliases: ['i2v', 'image-to-video', 'image2video'] },
-      { id: 'first-last', label: '首尾帧', description: '用首帧和尾帧控制转场', aliases: ['first-last', 'flf', 'start-end', 'keyframe'] },
-    ],
-  },
-  {
-    id: 'wan-22',
-    name: 'Wan 2.2',
-    description: '开源高质量视频生成模型',
-    media: 'video',
-    modes: [
-      { id: 't2v', label: '文生视频', description: '从文字描述生成视频', aliases: ['t2v', 'text-to-video', 'text2video'] },
-      { id: 'i2v', label: '图生视频', description: '基于参考图生成动态视频', aliases: ['i2v', 'image-to-video', 'image2video'] },
-    ],
-  },
-  {
-    id: 'image',
-    name: '图片生成',
-    description: '把想法变成可用图片',
-    media: 'image',
-    modes: [{ id: 'txt2img', label: '文生图片', description: '从文字描述生成图片', aliases: ['txt2img', 'text-to-image', 'text2image', 'image'] }],
-  },
-  {
-    id: 'audio',
-    name: '音频生成',
-    description: '为作品生成声音和配乐',
-    media: 'audio',
-    modes: [{ id: 'tts', label: '文本转语音', description: '从文字生成语音', aliases: ['tts', 'text-to-speech', 'audio'] }],
-  },
-  {
-    id: 'avatar',
-    name: '数字人',
-    description: '用脚本和声音生成数字人视频',
-    media: 'avatar',
-    modes: [{ id: 'avatar', label: '数字人视频', description: '从脚本生成口播视频', aliases: ['avatar', 'digital-human', 'talking-head'] }],
-  },
-]
-
-function searchableWorkflowText(workflow: Workflow): string {
-  return [workflow.id, workflow.manifest?.display_name, workflow.manifest?.description]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-}
-
-function mediaMatches(workflow: Workflow, media: StudioMedia): boolean {
-  const text = searchableWorkflowText(workflow)
-  if (media === 'avatar') return /avatar|digital-human|talking-head|数字人/i.test(text)
-  const outputs = workflow.manifest?.outputs.map((output) => output.content_type) ?? workflow.output_types
-  if (media === 'video') return outputs.some((value) => value.toLowerCase().includes('video'))
-  if (media === 'image') return outputs.some((value) => value.toLowerCase().includes('image'))
-  return outputs.some((value) => value.toLowerCase().includes('audio'))
-}
-
-/** Resolve a friendly model/mode to the best currently published workflow. */
-export function resolveStudioWorkflow(
-  workflows: Workflow[],
-  model: StudioModel,
-  mode: StudioMode,
-): Workflow | null {
-  const candidates = workflows.filter((workflow) => workflow.manifest_consistent && mediaMatches(workflow, model.media))
-  if (candidates.length === 0) return null
-  const modeMatch = candidates.find((workflow) => {
-    const text = searchableWorkflowText(workflow)
-    return mode.aliases.some((alias) => text.includes(alias))
+/** Only published Hub metadata defines capabilities; never substitute another model. */
+export function workflowsForMedia(workflows: Workflow[], media: StudioMedia, mode: StudioInputMode = 'all') {
+  return workflows.filter((workflow) => {
+    const outputs = workflow.manifest?.outputs.map((output) => output.content_type) ?? workflow.output_types
+    const text = `${workflow.id} ${workflow.manifest?.display_name ?? ''} ${workflow.manifest?.description ?? ''}`
+    const matches = media === 'avatar' ? /avatar|digital[-_ ]human|talking[-_ ]head|数字人/i.test(text)
+      : outputs.some((type) => type.toLowerCase().startsWith(`${media}/`))
+    if (!matches) return false
+    if (mode === 'all') return true
+    if (!workflow.manifest) return false
+    const hasReference = workflow.manifest.inputs.some((input) => input.kind === 'artifact')
+    return mode === 'reference' ? hasReference : !hasReference
   })
-  if (modeMatch) return modeMatch
-  return candidates.find((workflow) => workflow.available) ?? candidates[0] ?? null
 }
 
-export function modelsForMedia(media: StudioMedia): StudioModel[] {
-  return STUDIO_MODELS.filter((model) => model.media === media)
+const PROMPT_NAMES = ['prompt', 'positive_prompt', 'positive', 'text', 'description', 'instruction', '提示词']
+const negativeName = (name: string) => /negative|负面|反向/i.test(name)
+export function promptField(workflow: Workflow | null): string | null {
+  const fields = workflow?.manifest?.inputs.filter((input) => input.kind === 'parameter' && input.type === 'string' && !negativeName(input.name)) ?? []
+  for (const name of PROMPT_NAMES) {
+    const field = fields.find((field) => field.name.toLowerCase() === name)
+    if (field) return field.name
+  }
+  return fields.find((field) => /prompt|text|description|提示词/i.test(field.name))?.name ?? null
+}
+
+export function promptText(parameters: Record<string, unknown> | null | undefined): string {
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) return ''
+  const fields = Object.entries(parameters).filter(([key, value]) => !negativeName(key) && typeof value === 'string')
+  for (const name of PROMPT_NAMES) {
+    const value = fields.find(([key]) => key.toLowerCase() === name)?.[1]
+    if (typeof value === 'string') return value
+  }
+  return fields.find(([key]) => /prompt|text|description|提示词/i.test(key))?.[1] as string ?? ''
+}
+
+export function compatibleParameters(workflow: Workflow, parameters: Record<string, unknown> | null | undefined) {
+  return Object.fromEntries((workflow.manifest?.inputs ?? []).filter((field) => field.kind === 'parameter' && parameters && Object.hasOwn(parameters, field.name)).map((field) => [field.name, parameters![field.name]]))
+}
+
+export function filterHistory(jobs: JobSummary[], search: string, status: 'all' | 'active' | 'completed' | 'failed') {
+  const query = search.trim().toLocaleLowerCase()
+  return jobs.filter((job) => {
+    if (status === 'active' && ['completed', 'failed', 'cancelled'].includes(job.state)) return false
+    if (status === 'completed' && job.state !== 'completed') return false
+    if (status === 'failed' && job.state !== 'failed') return false
+    return !query || `${job.id} ${job.workflow_id} ${promptText(job.parameters)}`.toLocaleLowerCase().includes(query)
+  })
+}
+
+export function galleryForMedia(items: GalleryItem[], media: StudioMedia, search: string) {
+  const query = search.trim().toLocaleLowerCase()
+  return items.filter((item) => item.media_kind === (media === 'avatar' ? 'video' : media)
+    && (!query || `${item.display_name} ${item.workflow_id} ${promptText(item.parameters)}`.toLocaleLowerCase().includes(query)))
+}
+
+/** One-shot router transfer; consumed state is cleared after importing the draft. */
+export interface PromptTransfer { organizationId: string; userId: string; prompt: string }
+export function transferredPrompt(state: unknown, organizationId: string, userId: string): string {
+  if (!state || typeof state !== 'object' || !('studioPrompt' in state)) return ''
+  const transfer = state.studioPrompt as Partial<PromptTransfer> | null
+  return userId !== '' && transfer?.organizationId === organizationId && transfer.userId === userId && typeof transfer.prompt === 'string' ? transfer.prompt : ''
 }

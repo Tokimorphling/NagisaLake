@@ -24,6 +24,8 @@ export function JobForm({
   remixJob,
   galleryRemix,
   initialParameters,
+  onSubmitted,
+  navigateOnSubmit = true,
 }: {
   workflow: Workflow
   devices: Device[]
@@ -33,6 +35,8 @@ export function JobForm({
   galleryRemix?: GalleryRemixSeed | null
   /** Optional friendly Studio values, merged into the manifest-backed form. */
   initialParameters?: Record<string, unknown>
+  onSubmitted?: (job: Job) => void
+  navigateOnSubmit?: boolean
 }) {
   const manifest = workflow.manifest
   const parameters = useMemo(
@@ -152,9 +156,11 @@ export function JobForm({
     files,
     existingArtifactIds,
     target,
-    onSubmitted: () => {
+    navigateOnSubmit,
+    onSubmitted: (job) => {
       draft.reset()
       onClose()
+      onSubmitted?.(job)
     },
   })
 

@@ -1,122 +1,52 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/state/auth'
+import { useTheme } from '@/state/theme'
 import { useToast } from '@/state/toast'
 import { Button, cx } from '@/components/ui/primitives'
-import {
-  IconAudio,
-  IconBell,
-  IconGallery,
-  IconGrid,
-  IconImage,
-  IconLogo,
-  IconLogout,
-  IconSettings,
-  IconSparkles,
-  IconVideo,
-} from './icons'
-
-const MEDIA_NAV = [
-  { to: '/studio/avatar', label: '数字人', icon: IconSparkles },
-  { to: '/studio/video', label: '视频', icon: IconVideo },
-  { to: '/studio/image', label: '图片', icon: IconImage },
-  { to: '/studio/audio', label: '音频', icon: IconAudio },
-]
+import { Modal } from '@/components/ui/Modal'
+import { OrgSwitcher } from './OrgSwitcher'
+import { IconDevice, IconGallery, IconGrid, IconJobs, IconLogo, IconLogout, IconMoon, IconSettings, IconSparkles, IconSun, IconWorkflow } from './icons'
+import '@/features/studio/studio.css'
 
 export function StudioLayout() {
-  const { user, logout } = useAuth()
+  const { user, logout, currentMembership } = useAuth()
+  const { resolved, setTheme } = useTheme()
+  const [accountOpen, setAccountOpen] = useState(false)
   const toast = useToast()
   const navigate = useNavigate()
-  const location = useLocation()
-
-  return (
-    <div className="studio-shell grid h-dvh min-h-0 grid-cols-[64px_1fr] overflow-hidden bg-bg">
-      <aside className="flex min-h-0 flex-col items-center border-r border-border/80 bg-surface/95 py-3">
-        <NavLink to="/studio/video" aria-label="NagisaLake Studio" className="mb-6 grid size-10 place-items-center rounded-xl bg-accent/10 text-accent transition hover:bg-accent/20">
-          <IconLogo className="size-7" />
-        </NavLink>
-        <nav className="flex flex-1 flex-col items-center gap-2" aria-label="Studio 导航">
-          <NavLink
-            to="/studio/video"
-            className={({ isActive }) => cx('grid size-10 place-items-center rounded-xl transition', isActive ? 'bg-accent/15 text-accent' : 'text-subtle hover:bg-surface-2 hover:text-text')}
-            title="创作"
-          >
-            <IconSparkles className="size-4" />
-          </NavLink>
-          <NavLink
-            to="/gallery"
-            className={({ isActive }) => cx('grid size-10 place-items-center rounded-xl transition', isActive ? 'bg-accent/15 text-accent' : 'text-subtle hover:bg-surface-2 hover:text-text')}
-            title="资产"
-          >
-            <IconGallery className="size-4" />
-          </NavLink>
-          <NavLink
-            to="/console"
-            className="grid size-10 place-items-center rounded-xl text-subtle transition hover:bg-surface-2 hover:text-text"
-            title="Console"
-          >
-            <IconGrid className="size-4" />
-          </NavLink>
-        </nav>
-        <div className="flex flex-col items-center gap-2 border-t border-border/70 pt-3">
-          <button type="button" className="grid size-10 place-items-center rounded-xl text-subtle transition hover:bg-surface-2 hover:text-text" title="通知">
-            <IconBell className="size-4" />
-          </button>
-          <button type="button" className="grid size-10 place-items-center rounded-xl text-subtle transition hover:bg-surface-2 hover:text-text" title={user?.email ?? '账户'}>
-            <span className="grid size-6 place-items-center rounded-full bg-violet/25 text-[10px] font-semibold text-violet">
-              {(user?.email ?? '?').slice(0, 2).toUpperCase()}
-            </span>
-          </button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="size-10 rounded-xl p-0"
-            title="退出登录"
-            onClick={async () => {
-              await logout()
-              toast.info('已退出登录')
-              navigate('/login')
-            }}
-          >
-            <IconLogout className="size-4" />
-          </Button>
-        </div>
-      </aside>
-
-      <div className="grid min-h-0 min-w-0 grid-rows-[56px_1fr]">
-        <header className="flex min-w-0 items-center justify-between border-b border-border/80 bg-surface/90 px-5 backdrop-blur-xl">
-          <div className="flex min-w-0 items-center gap-6 overflow-x-auto">
-            <span className="shrink-0 text-sm font-semibold tracking-tight">Studio</span>
-            <nav className="flex h-full items-center gap-1" aria-label="媒体类型">
-              {MEDIA_NAV.map((item) => {
-                const Icon = item.icon
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) => cx('flex h-10 items-center gap-2 rounded-lg px-3 text-xs transition', isActive ? 'bg-accent/12 font-semibold text-accent' : 'text-muted hover:bg-surface-2 hover:text-text')}
-                  >
-                    <Icon className="size-3.5" />
-                    {item.label}
-                  </NavLink>
-                )
-              })}
-            </nav>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="hidden text-[11px] text-subtle sm:inline">{location.pathname.startsWith('/studio') ? '创作空间' : ''}</span>
-            <NavLink to="/gallery" className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted transition hover:bg-surface-2 hover:text-text sm:flex">
-              <IconGallery className="size-3.5" />
-              历史
-            </NavLink>
-            <NavLink to="/settings" className="grid size-8 place-items-center rounded-lg text-subtle transition hover:bg-surface-2 hover:text-text" title="设置">
-              <IconSettings className="size-3.5" />
-            </NavLink>
-          </div>
-        </header>
-        <main className="min-h-0 min-w-0 overflow-hidden">
-          <Outlet />
-        </main>
+  const { pathname } = useLocation()
+  const agentMode = /^\/studio\/agent\/?$/.test(pathname)
+  const links = [
+    { to: '/gallery', label: '发现', icon: IconGallery, active: false },
+    { to: '/studio/video', label: '自由创作', icon: IconSparkles, active: !agentMode },
+    { to: '/studio/agent', label: 'Agent 模式', icon: IconWorkflow, active: agentMode },
+    { to: '/jobs', label: '全部任务', icon: IconJobs, active: false },
+    { to: '/devices', label: '设备', icon: IconDevice, active: false },
+  ]
+  return <div className="studio-shell">
+    <a href="#studio-main" className="sr-only focus:not-sr-only focus:fixed focus:left-20 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:p-3 focus:text-sm">跳至创作区</a>
+    <aside className="studio-rail" aria-label="Studio 侧栏">
+      <Link to="/studio/video" className="mb-5 flex flex-col items-center gap-1.5 text-accent" aria-label="NagisaLake Studio 首页">
+        <IconLogo className="size-7" /><span className="text-[8px] font-semibold tracking-wider text-muted">NAGISA</span>
+      </Link>
+      <nav className="flex w-full flex-1 flex-col items-center gap-2" aria-label="Studio 导航">
+        {links.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} className={cx('studio-rail-link', active && 'is-active')} aria-current={active ? 'page' : undefined}><Icon /><span>{label}</span></Link>)}
+        <div className="my-2 w-7 border-t border-border" />
+        <Link to="/console" className="studio-rail-link"><IconGrid /><span>控制台</span></Link>
+      </nav>
+      <div className="mt-5 flex flex-col items-center gap-2">
+        <button type="button" className="studio-rail-tool" onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')} aria-label={resolved === 'dark' ? '切换浅色主题' : '切换深色主题'} title={resolved === 'dark' ? '切换浅色主题' : '切换深色主题'}>{resolved === 'dark' ? <IconSun className="size-4" /> : <IconMoon className="size-4" />}</button>
+        <Link to="/settings" className="studio-rail-tool" aria-label="偏好与通知设置" title="偏好与通知设置"><IconSettings className="size-4" /></Link>
+        <button type="button" className="studio-rail-account" onClick={() => setAccountOpen(true)} aria-label="账户与组织" title={currentMembership?.organization_name ?? '账户与组织'}>
+          <span className="grid size-7 place-items-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">{(user?.email ?? '?').slice(0, 2).toUpperCase()}</span>
+          <span className="max-w-full truncate text-[9px] text-muted">{currentMembership?.organization_name ?? '选择组织'}</span>
+        </button>
       </div>
-    </div>
-  )
+    </aside>
+    <main id="studio-main" className="min-h-0 min-w-0 overflow-hidden" tabIndex={-1}><Outlet /></main>
+    <Modal open={accountOpen} title="账户与组织" description={user?.email} onClose={() => setAccountOpen(false)} footer={<Button size="sm" variant="ghost" onClick={async () => { await logout(); setAccountOpen(false); toast.info('已退出登录'); navigate('/login') }}><IconLogout className="size-3.5" />退出登录</Button>}>
+      <div className="min-h-24 py-2"><OrgSwitcher /><p className="mt-4 text-xs leading-5 text-muted">工作流、任务与生成配额按组织隔离。切换组织会清空当前创作草稿并取消未完成的 Agent 请求。</p></div>
+    </Modal>
+  </div>
 }

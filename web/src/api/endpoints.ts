@@ -34,6 +34,7 @@ import type {
 } from './types'
 
 type PageParams = { limit?: number; cursor?: string }
+type ScopeOptions = { organizationId?: string; signal?: AbortSignal }
 
 function pageSuffix(params?: PageParams): string {
   const query = new URLSearchParams()
@@ -114,7 +115,7 @@ export const endpoints = {
   revokeWorkerCredential: (org: string, id: string) =>
     api.delete<void>(`/organizations/${org}/worker-credentials/${id}`),
 
-  devices: (params?: PageParams) => api.get<DevicesPage>(`/devices${pageSuffix(params)}`),
+  devices: (params?: PageParams, scope?: ScopeOptions) => api.get<DevicesPage>(`/devices${pageSuffix(params)}`, scope),
   createDeviceInvite: (body: {
     device_organization_id: string
     device_id: string
@@ -133,17 +134,17 @@ export const endpoints = {
     grantee_user_id: string
   }) => api.post<void>('/devices/shares/revoke', body),
 
-  workflows: (params?: PageParams) => api.get<WorkflowsPage>(`/workflows${pageSuffix(params)}`),
+  workflows: (params?: PageParams, scope?: ScopeOptions) => api.get<WorkflowsPage>(`/workflows${pageSuffix(params)}`, scope),
 
   createUpload: (body: {
     name: string
     content_type: string
     size_bytes: number
     sha256: string
-  }) => api.post<CreateUploadResponse>('/artifacts/uploads', body),
-  completeUpload: (artifactId: string, body: { artifact_id: string; size_bytes: number; sha256: string }) =>
-    api.post<CreateUploadResponse>(`/artifacts/uploads/${artifactId}/complete`, body),
-  download: (artifactId: string) => api.get<DownloadResponse>(`/artifacts/${artifactId}/download`),
+  }, scope?: ScopeOptions) => api.post<CreateUploadResponse>('/artifacts/uploads', body, scope),
+  completeUpload: (artifactId: string, body: { artifact_id: string; size_bytes: number; sha256: string }, scope?: ScopeOptions) =>
+    api.post<CreateUploadResponse>(`/artifacts/uploads/${artifactId}/complete`, body, scope),
+  download: (artifactId: string, scope?: ScopeOptions) => api.get<DownloadResponse>(`/artifacts/${encodeURIComponent(artifactId)}/download`, scope),
   publishGalleryItem: (artifactId: string) =>
     api.post<GalleryItem>('/gallery/items', { artifact_id: artifactId }),
   galleryItems: (params?: PageParams) =>
@@ -158,12 +159,12 @@ export const endpoints = {
     api.delete<void>(`/gallery/items/${encodeURIComponent(itemId)}`),
 
   /** One page of jobs, newest first. Rows carry no event timeline. */
-  jobs: (params?: PageParams) => {
+  jobs: (params?: PageParams, scope?: ScopeOptions) => {
     const query = new URLSearchParams()
     if (params?.limit !== undefined) query.set('limit', String(params.limit))
     if (params?.cursor) query.set('cursor', params.cursor)
     const suffix = query.size > 0 ? `?${query}` : ''
-    return api.get<JobsPage>(`/jobs${suffix}`)
+    return api.get<JobsPage>(`/jobs${suffix}`, scope)
   },
   job: (id: string) => api.get<Job>(`/jobs/${id}`),
   jobEvents: (id: string, after: number, signal: AbortSignal) => {
@@ -180,7 +181,8 @@ export const endpoints = {
       device_id?: string
     },
     idempotencyKey: string,
-  ) => request<Job>('/jobs', { method: 'POST', body, idempotencyKey }),
+    scope?: ScopeOptions,
+  ) => request<Job>('/jobs', { method: 'POST', body, idempotencyKey, ...scope }),
   cancelJob: (id: string) => api.delete<Job>(`/jobs/${id}`),
 
   /** One page of job batches, newest first. */

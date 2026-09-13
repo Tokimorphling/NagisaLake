@@ -41,6 +41,22 @@ describe('agent API', () => {
     vi.stubGlobal('fetch', vi.fn(async () => response('data: {"type":"completed","text":"missing id"}\n\n')))
     await expect(streamAgentRun({skill:'rewrite',input:'hello'},'org',new AbortController().signal,()=>{})).rejects.toThrow('无效的 Agent 事件')
   })
+  it('stops reading after a terminal event even if the server keeps the stream open', async () => {
+    const cancelled = vi.fn()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode(frame({type:'completed',execution_id:'run',text:'final'}))) },
+      cancel: cancelled,
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {headers:{'content-type':'text/event-stream'}})))
+    const seen: AgentEvent[] = []
+    await streamAgentRun({skill:'rewrite',input:'hello'},'org',new AbortController().signal,(event)=>seen.push(event))
+    expect(seen).toEqual([{type:'completed',execution_id:'run',text:'final'}])
+    expect(cancelled).toHaveBeenCalledOnce()
+  })
+  it('does not swallow a consumer callback error while processing a terminal event', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(frame({type:'completed',execution_id:'run',text:'final'}))))
+    await expect(streamAgentRun({skill:'rewrite',input:'hello'},'org',new AbortController().signal,()=>{throw new Error('consumer failure')})).rejects.toThrow('consumer failure')
+  })
   it('uses the same authenticated command contract for cancellation', async () => {
     authenticate()
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, _options?: RequestInit) => new Response(null, {status:204}))

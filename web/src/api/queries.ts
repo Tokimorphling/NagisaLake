@@ -89,8 +89,8 @@ export function usePublicSettings() {
 export function useWorkflows(org: string | null) {
   return useInfiniteQuery({
     queryKey: keys.workflows(org),
-    queryFn: ({ pageParam }) =>
-      endpoints.workflows({ limit: 50, cursor: pageParam ?? undefined }),
+    queryFn: ({ pageParam, signal }) =>
+      endpoints.workflows({ limit: 50, cursor: pageParam ?? undefined }, { organizationId: org ?? undefined, signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     select: (data) => data.pages.flatMap((page) => page.items),
@@ -103,8 +103,8 @@ export function useWorkflows(org: string | null) {
 export function useDevices(org: string | null, enabled = true) {
   return useInfiniteQuery({
     queryKey: keys.devices(org),
-    queryFn: ({ pageParam }) =>
-      endpoints.devices({ limit: 50, cursor: pageParam ?? undefined }),
+    queryFn: ({ pageParam, signal }) =>
+      endpoints.devices({ limit: 50, cursor: pageParam ?? undefined }, { organizationId: org ?? undefined, signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     select: (data) => data.pages.flatMap((page) => page.items),
@@ -132,8 +132,8 @@ export function useJobs(org: string | null) {
 
   return useInfiniteQuery({
     queryKey: keys.jobs(org),
-    queryFn: ({ pageParam }) =>
-      endpoints.jobs({ limit: JOBS_PAGE_SIZE, cursor: pageParam ?? undefined }),
+    queryFn: ({ pageParam, signal }) =>
+      endpoints.jobs({ limit: JOBS_PAGE_SIZE, cursor: pageParam ?? undefined }, { organizationId: org ?? undefined, signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     enabled: org !== null,

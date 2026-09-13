@@ -20,6 +20,7 @@ export function Toaster() {
 
   return (
     <div
+      data-toast-region=""
       className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end"
       role="region"
       aria-label="通知"

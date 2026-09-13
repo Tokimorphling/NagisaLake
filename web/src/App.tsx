@@ -29,6 +29,7 @@ const AuditPage = lazy(() => import('@/pages/AuditPage').then((m) => ({ default:
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const GalleryPage = lazy(() => import('@/pages/GalleryPage').then((m) => ({ default: m.GalleryPage })))
 const StudioPage = lazy(() => import('@/pages/studio/StudioPage').then((m) => ({ default: m.StudioPage })))
+const AgentPage = lazy(() => import('@/pages/studio/AgentPage').then((m) => ({ default: m.AgentPage })))
 
 function RouteFallback() {
   return (
@@ -74,6 +75,7 @@ export function App() {
         <Routes>
           <Route element={<StudioLayout />}>
             <Route path="/studio" element={<Navigate to="/studio/video" replace />} />
+            <Route path="/studio/agent" element={<Suspense fallback={<RouteFallback />}><AgentPage /></Suspense>} />
             <Route
               path="/studio/:media"
               element={

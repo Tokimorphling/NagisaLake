@@ -109,6 +109,12 @@ JSON 中另有 `type` 字段，值与 SSE event 名称一致。`completed.text` 
 Studio 的提示词区域提供 skill 选择、流式预览、取消和“将结果应用到提示词”。结果不会自动覆盖用户
 在生成过程中继续编辑的草稿；切换组织或卸载组件会中止该次请求。
 
+侧栏的 `/studio/agent` 是完整的 Agent 工作台，和内嵌助手共用 `useAgentRun` 控制器。它展示每个
+call ID 的调用中/成功/失败状态、当前 Skill、执行 ID 和结构化的纯文本输出。结果可显式送回视频、
+图片、音频或数字人的创作区，使用带用户与组织标记的路由状态，不把 prompt 写进 URL 或 localStorage。
+返回创作区并不等于提交媒体任务，仍须经过 manifest 参数、参考素材及设备检查。媒体工作流选择与
+Agent 的 LLM 模型选择是两件事：前者来自 Worker 目录，后者仍由 Hub 的 `[opencode.model]` 配置。
+
 ## 可靠性与安全
 
 1. 每次执行新建 OpenCode 会话，订阅 session 路由后才发送 `prompt_async`。

@@ -2,6 +2,7 @@
 export async function consumeSse(
   response: Response,
   onEvent: (eventName: string, data: string, lastEventId: string | null) => void,
+  stopAfterEvent?: () => boolean,
 ): Promise<void> {
   if (!response.body) throw new Error('Hub returned an empty event stream')
   const reader = response.body.getReader()
@@ -47,6 +48,7 @@ export async function consumeSse(
       }
       if (char !== '\r' && char !== '\n') continue
       processLine(buffer.slice(start, index))
+      if (stopAfterEvent?.()) { buffer = ''; scanned = 0; return }
       start = index + 1
       skipLf = char === '\r'
     }
@@ -60,6 +62,7 @@ export async function consumeSse(
       const { value, done } = await reader.read()
       if (done) break
       feed(decoder.decode(value, { stream: true }))
+      if (stopAfterEvent?.()) return
     }
     feed(decoder.decode())
     // Incomplete events are not dispatched at EOF. Run streams require a

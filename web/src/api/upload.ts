@@ -1,4 +1,4 @@
-import { ApiError, openAuthenticatedStream } from './client'
+import { ApiError, openAuthenticatedStream, session } from './client'
 import { endpoints } from './endpoints'
 import { sha256Hex } from './hash'
 
@@ -25,9 +25,14 @@ function putWithProgress(
   headers: Record<string, string>,
   body: Blob,
   onPercent?: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Upload cancelled', 'AbortError')); return }
     const xhr = new XMLHttpRequest()
+    const abort = () => xhr.abort()
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    signal?.addEventListener('abort', abort, { once: true })
     xhr.open(method, url, true)
     for (const [key, value] of Object.entries(headers)) {
       // Content-Length is set by the browser; setting it manually can break
@@ -40,13 +45,15 @@ function putWithProgress(
       }
     }
     xhr.onload = () => {
+      cleanup()
       const response = new Response(xhr.response, {
         status: xhr.status,
         statusText: xhr.statusText,
       })
       resolve(response)
     }
-    xhr.onerror = () => reject(new Error('network_error'))
+    xhr.onerror = () => { cleanup(); reject(new Error('network_error')) }
+    xhr.onabort = () => { cleanup(); reject(new DOMException('Upload cancelled', 'AbortError')) }
     xhr.send(body)
   })
 }
@@ -59,12 +66,15 @@ function putWithProgress(
 export async function uploadArtifact(
   file: File,
   onProgress?: (progress: UploadProgress) => void,
-  options?: { fileIndex?: number; fileTotal?: number },
+  options?: { fileIndex?: number; fileTotal?: number; organizationId?: string; signal?: AbortSignal },
 ): Promise<string> {
+  const scope = { organizationId: options?.organizationId ?? session.organizationId ?? undefined, signal: options?.signal }
+  scope.signal?.throwIfAborted()
   const fileIndex = options?.fileIndex
   const fileTotal = options?.fileTotal
   onProgress?.({ stage: 'hashing', fileName: file.name, percent: 0, fileIndex, fileTotal })
   const sha256 = await sha256Hex(file)
+  scope.signal?.throwIfAborted()
   const contentType = file.type || 'application/octet-stream'
 
   const reserved = await endpoints.createUpload({
@@ -72,7 +82,7 @@ export async function uploadArtifact(
     content_type: contentType,
     size_bytes: file.size,
     sha256,
-  })
+  }, scope)
 
   onProgress?.({ stage: 'uploading', fileName: file.name, percent: 0, fileIndex, fileTotal })
   // Send exactly the signed method/url/headers. Adding or omitting a header
@@ -92,8 +102,10 @@ export async function uploadArtifact(
           fileIndex,
           fileTotal,
         }),
+      scope.signal,
     )
-  } catch {
+  } catch (error) {
+    if (scope.signal?.aborted || (error as Error)?.name === 'AbortError') throw error
     throw new ApiError(
       0,
       'network_error',
@@ -115,7 +127,7 @@ export async function uploadArtifact(
     artifact_id: reserved.artifact.id,
     size_bytes: file.size,
     sha256,
-  })
+  }, scope)
 
   return reserved.artifact.id
 }
