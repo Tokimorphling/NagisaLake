@@ -65,18 +65,19 @@ fn persisted_user_summaries_may_be_objects_not_booleans() {
 
 #[derive(Default)]
 struct Mock {
-    created:     AtomicUsize,
-    streams:     AtomicUsize,
-    prompts:     AtomicUsize,
-    polls:       Mutex<HashMap<String, usize>>,
-    sessions:    Mutex<Vec<Value>>,
-    aborted:     Mutex<Vec<String>>,
-    deleted:     Mutex<Vec<String>>,
-    notify:      Notify,
-    hang_prompt: bool,
-    fail_prompt: bool,
-    events:      Mutex<Option<broadcast::Sender<String>>>,
-    slow_delete: AtomicBool,
+    created:       AtomicUsize,
+    streams:       AtomicUsize,
+    prompts:       AtomicUsize,
+    polls:         Mutex<HashMap<String, usize>>,
+    sessions:      Mutex<Vec<Value>>,
+    prompt_bodies: Mutex<Vec<Value>>,
+    aborted:       Mutex<Vec<String>>,
+    deleted:       Mutex<Vec<String>>,
+    notify:        Notify,
+    hang_prompt:   bool,
+    fail_prompt:   bool,
+    events:        Mutex<Option<broadcast::Sender<String>>>,
+    slow_delete:   AtomicBool,
 }
 
 async fn spawn_mock(
@@ -139,6 +140,7 @@ async fn prompt(
             .contains("rewrite")
     );
     assert!(body.get("tools").is_none()); // do not overwrite session deny rules
+    state.prompt_bodies.lock().unwrap().push(body);
     state.prompts.fetch_add(1, Ordering::Relaxed);
     state.notify.notify_waiters();
     if state.hang_prompt {
@@ -208,6 +210,36 @@ fn request() -> RunRequest {
         input:   "a simple sentence".into(),
         options: HashMap::new().into_iter().collect(),
     }
+}
+
+#[tokio::test]
+async fn configured_model_ids_are_sent_using_opencode_wire_names() {
+    let (mut config, state, task) = spawn_mock(false, false).await;
+    config.model = Some(
+        toml::from_str::<ModelRef>(
+            r#"
+provider_id = "opencode"
+model_id = "mimo-v2.5-free"
+"#,
+        )
+        .unwrap(),
+    );
+    let service = service(config);
+    let run = service.call(request()).await.unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(3), run.completion().wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(&*outcome, RunEvent::Completed { .. }));
+    let prompts = state.prompt_bodies.lock().unwrap();
+    assert_eq!(prompts.len(), 1);
+    assert_eq!(
+        prompts[0]["model"],
+        json!({
+            "providerID": "opencode", "modelID": "mimo-v2.5-free"
+        })
+    );
+    task.abort();
 }
 
 #[tokio::test]

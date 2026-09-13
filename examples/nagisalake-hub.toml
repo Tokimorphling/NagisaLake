@@ -47,7 +47,6 @@ access_key_id_env = "NAGISALAKE_S3_ACCESS_KEY_ID"
 secret_access_key_env = "NAGISALAKE_S3_SECRET_ACCESS_KEY"
 
 
-
 [opencode]
 base_url = "http://127.0.0.1:4096"
 # Only these literal skills are exposed. Empty = deny all; /skill discovery
@@ -61,6 +60,6 @@ run_timeout_seconds = 120
 # Set this on non-loopback deployments; the value comes from the environment.
 # password_env = "OPENCODE_SERVER_PASSWORD"
 # directory = "/workspace/nagisalake-skills"
-# [opencode.model]
-# provider_id = "your-provider"
-# model_id = "your-model"
+[opencode.model]
+provider_id = "opencode"
+model_id = "mimo-v2.5-free"

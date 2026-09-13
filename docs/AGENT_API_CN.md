@@ -45,10 +45,15 @@ cleanup_sessions = true
 # 非 loopback 地址必须配置：
 # password_env = "OPENCODE_SERVER_PASSWORD"
 # directory = "/workspace/skills"
-# [opencode.model]
-# provider_id = "your-provider"
-# model_id = "your-model"
+[opencode.model]
+provider_id = "opencode"
+model_id = "mimo-v2.5-free"
 ```
+
+provider/model 应使用 OpenCode `/provider` 返回的实际 ID；例如 OpenCode Zen 对应 `opencode`，
+MiMo V2.5 Free 对应 `mimo-v2.5-free`。`agent = "build"` 不是模型选择；省略 model 时由服务端决定。
+caller 日志记录 `requested_provider` / `requested_model`，省略时明确标为 `server_default`，不把
+请求配置当成服务端实际模型的独立回执。`llm.runtime=ai-sdk` 是 OpenCode 内部信息，不属于 caller 配置。
 
 `allowed_skills` 默认空列表，**拒绝全部 skill**。`GET /skill` 的发现结果不自动成为授权列表。
 名称必须是字母/数字/`-`/`_`，不接受 glob 或路径。`skill_version` 是部署管理的业务版本标记，
@@ -152,7 +157,11 @@ cargo run -p nagisalake-agent --example opencode -- \
   --input 'Write a short text-only H3 prompt for an origami boat on a pond.'
 ```
 
-本次对本地 `1.18.15` 验证了健康检查、会话与 HTTP 边界，并修复其 user `summary` 为对象而非 bool 的
-兼容问题。模型执行随后返回 provider error，另一次触发 120 秒 timeout，未观察到成功的最终 skill
-结果；不能将 mock 端到端测试通过等同于真实 provider 联调成功。恢复上游 provider 后可重跑上面的
-显式 smoke 命令，无需更换前端接口。
+最初对本地 `1.18.15` 的未指定模型请求，先发现并修复了 user `summary` 为对象而非 bool 的兼容问题，
+随后模型执行分别返回 provider error、120 秒 timeout。此前的失败日志没有足够信息还原服务端实际选择的
+模型，因此不能将根因直接断定为某个 provider 或 caller 故障。
+
+后续按 `/provider` 核对并显式指定 `opencode / mimo-v2.5-free`，真实 `h3-prompt-writing` 调用已成功：
+执行 ID `418ba285-de3a-4bf4-ba8a-917fe7b36f6e`，耗时约 32.811 秒，观察到四个不同 call ID 的 skill
+完成事件、连续 `text_delta` 和最终 `completed`。最终成功还经过了“批准的 skill 名称 + 工具完成状态”
+的内部校验。此结果确认调用链路可工作，但不代表模型一定满足提示词中的每项内容/格式约束。
