@@ -1,58 +1,71 @@
-/** Minimal SSE reader for authenticated fetch streams. */
+/** Incremental SSE reader for authenticated fetch streams. Never reconnects. */
 export async function consumeSse(
   response: Response,
   onEvent: (eventName: string, data: string, lastEventId: string | null) => void,
 ): Promise<void> {
   if (!response.body) throw new Error('Hub returned an empty event stream')
-
   const reader = response.body.getReader()
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  const maxEventChars = 32 * 1024 * 1024
   let buffer = ''
+  let scanned = 0
   let eventName = 'message'
   let eventId: string | null = null
   let data: string[] = []
+  let dataChars = 0
+  let skipLf = false
 
   const dispatch = () => {
-    if (data.length === 0) return
-    onEvent(eventName, data.join('\n'), eventId)
+    if (data.length > 0) onEvent(eventName, data.join('\n'), eventId)
     eventName = 'message'
-    eventId = null
     data = []
+    dataChars = 0
   }
-
   const processLine = (line: string) => {
-    if (line === '') {
-      dispatch()
-      return
-    }
+    if (line === '') { dispatch(); return }
     if (line.startsWith(':')) return
-
     const separator = line.indexOf(':')
     const field = separator === -1 ? line : line.slice(0, separator)
     let value = separator === -1 ? '' : line.slice(separator + 1)
     if (value.startsWith(' ')) value = value.slice(1)
-
     if (field === 'event') eventName = value
-    else if (field === 'id' && !value.includes('\0')) eventId = value
-    else if (field === 'data') data.push(value)
-  }
-
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-
-    let newline = buffer.indexOf('\n')
-    while (newline !== -1) {
-      let line = buffer.slice(0, newline)
-      buffer = buffer.slice(newline + 1)
-      if (line.endsWith('\r')) line = line.slice(0, -1)
-      processLine(line)
-      newline = buffer.indexOf('\n')
+    else if (field === 'id' && !value.includes('\0')) eventId = value || null
+    else if (field === 'data') {
+      dataChars += value.length + 1
+      if (dataChars > maxEventChars) throw new Error('Hub SSE event exceeds size limit')
+      data.push(value)
     }
   }
+  const feed = (text: string) => {
+    buffer += text
+    let start = 0
+    for (let index = scanned; index < buffer.length; index++) {
+      const char = buffer[index]
+      if (skipLf) {
+        skipLf = false
+        if (char === '\n') { start = index + 1; continue }
+      }
+      if (char !== '\r' && char !== '\n') continue
+      processLine(buffer.slice(start, index))
+      start = index + 1
+      skipLf = char === '\r'
+    }
+    buffer = buffer.slice(start)
+    scanned = buffer.length
+    if (buffer.length > maxEventChars) throw new Error('Hub SSE line exceeds size limit')
+  }
 
-  buffer += decoder.decode()
-  if (buffer.length > 0) processLine(buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer)
-  dispatch()
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      feed(decoder.decode(value, { stream: true }))
+    }
+    feed(decoder.decode())
+    // Incomplete events are not dispatched at EOF. Run streams require a
+    // terminal event and must report truncation rather than invent completion.
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use futures_util::StreamExt;
 
 pub(super) const DISPATCH_CONSUMER_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -55,14 +56,19 @@ pub(super) async fn consume_dispatch_outbox(state: AppState) {
             .metrics
             .dispatch_outbox_claimed_total
             .fetch_add(entries.len() as u64, Ordering::Relaxed);
-        for entry in entries {
-            let counter = if dispatch_outbox_entry(&state, &store, entry).await {
-                &state.metrics.dispatch_outbox_delivered_total
-            } else {
-                &state.metrics.dispatch_outbox_errors_total
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
-        }
+        // Each claimed row is a different (job, attempt). Wait for ACKs in
+        // parallel so one slow worker does not delay the other 31 commands.
+        // The claim size also bounds in-flight work; no unbounded task fanout.
+        futures_util::stream::iter(entries)
+            .for_each_concurrent(32, |entry| async {
+                let counter = if dispatch_outbox_entry(&state, &store, entry).await {
+                    &state.metrics.dispatch_outbox_delivered_total
+                } else {
+                    &state.metrics.dispatch_outbox_errors_total
+                };
+                counter.fetch_add(1, Ordering::Relaxed);
+            })
+            .await;
         state
             .metrics
             .dispatch_outbox_last_pass_duration_nanoseconds
@@ -338,11 +344,37 @@ pub(super) async fn dispatch_outbox_entry(
             return false;
         }
     };
+    // One query for every input, rather than N sequential artifact reads
+    // directly on this job's dispatch latency.
+    let artifacts = match store
+        .artifacts_by_ids(&entry.organization_id, &input_ids)
+        .await
+    {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            warn!(?error, job_id = %entry.job_id, "failed to read dispatch artifacts");
+            let _ = store
+                .record_dispatch_error(
+                    &entry.organization_id,
+                    &entry.job_id,
+                    entry.attempt,
+                    &error.to_string(),
+                )
+                .await;
+            return false;
+        }
+    };
+    let mut by_id: HashMap<String, nagisalake_hub_store::StoredArtifact> = artifacts
+        .into_iter()
+        .map(|artifact| (artifact.id.clone(), artifact))
+        .collect();
     let mut inputs = Vec::with_capacity(input_ids.len());
+    // Iterated in the job's own input order: `ANY($2)` does not preserve it, and
+    // the workflow binds inputs positionally.
     for artifact_id in input_ids {
-        let artifact = match store.artifact(&entry.organization_id, &artifact_id).await {
-            Ok(Some(artifact)) if artifact.state == "ready" => artifact,
-            Ok(_) => {
+        let artifact = match by_id.remove(&artifact_id) {
+            Some(artifact) if artifact.state == "ready" => artifact,
+            _ => {
                 let message = format!("input artifact {artifact_id} is not ready");
                 let _ = store
                     .record_dispatch_error(
@@ -350,18 +382,6 @@ pub(super) async fn dispatch_outbox_entry(
                         &entry.job_id,
                         entry.attempt,
                         &message,
-                    )
-                    .await;
-                return false;
-            }
-            Err(error) => {
-                warn!(?error, %artifact_id, job_id = %entry.job_id, "failed to read dispatch artifact");
-                let _ = store
-                    .record_dispatch_error(
-                        &entry.organization_id,
-                        &entry.job_id,
-                        entry.attempt,
-                        &error.to_string(),
                     )
                     .await;
                 return false;

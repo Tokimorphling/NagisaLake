@@ -581,6 +581,7 @@ mod tests {
             oauth:        None,
             rate_limit:   crate::RateLimitConfig::default(),
             log:          crate::LogConfig::default(),
+            opencode:     None,
         })
         .await
         .unwrap();

@@ -120,73 +120,156 @@ const DEVICE_ACCESS_CACHE_CAPACITY: usize = 2_048;
 struct ReadCacheEntry<T> {
     value:      T,
     expires_at: Instant,
+    /// Distinguishes this entry from an earlier one under the same key whose
+    /// eviction-order slot has not been consumed yet.
+    seq:        u64,
 }
 
-#[derive(Debug, Default)]
+/// Bounded cache whose entries all share one TTL.
+///
+/// Because the TTL is uniform, insertion order *is* expiry order, so an
+/// insertion-ordered queue makes both expiry and capacity eviction O(1)
+/// amortized. The previous version swept the whole map with `retain` and then
+/// picked the eviction victim with a linear `min_by_key`, so every write to a
+/// full cache cost O(capacity): a 1k-2k entry scan on paths that run per job
+/// read, per media read, and per device-access check.
+#[derive(Debug)]
+struct TtlCache<T> {
+    entries:  HashMap<String, ReadCacheEntry<T>>,
+    /// `(seq, key)` in insertion order. A slot whose `seq` no longer matches the
+    /// map was replaced or removed, and is skipped when it surfaces.
+    order:    VecDeque<(u64, String)>,
+    next_seq: u64,
+    ttl:      Duration,
+    capacity: usize,
+}
+
+impl<T: Clone> TtlCache<T> {
+    fn new(ttl: Duration, capacity: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            next_seq: 0,
+            ttl,
+            capacity: capacity.max(1),
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<T> {
+        let entry = self.entries.get(key)?;
+        if entry.expires_at <= Instant::now() {
+            self.entries.remove(key);
+            return None;
+        }
+        Some(entry.value.clone())
+    }
+
+    fn insert(&mut self, key: String, value: T) {
+        let now = Instant::now();
+        self.drop_expired(now);
+        if self.entries.len() >= self.capacity && !self.entries.contains_key(&key) {
+            self.evict_oldest();
+        }
+        let seq = self.next_seq;
+        self.next_seq = self.next_seq.wrapping_add(1);
+        self.order.push_back((seq, key.clone()));
+        self.entries.insert(key, ReadCacheEntry {
+            value,
+            expires_at: now + self.ttl,
+            seq,
+        });
+        // Repeatedly replacing a non-front key must not grow the auxiliary
+        // queue without bound while an older, untouched key is still live.
+        if self.order.len() > self.capacity.saturating_mul(2) {
+            let entries = &self.entries;
+            self.order
+                .retain(|(seq, key)| entries.get(key).is_some_and(|entry| entry.seq == *seq));
+        }
+    }
+
+    fn remove(&mut self, key: &str) {
+        self.entries.remove(key);
+    }
+
+    fn retain<F: FnMut(&str) -> bool>(&mut self, mut keep: F) {
+        self.entries.retain(|key, _| keep(key));
+    }
+
+    /// Drops the expired prefix. A uniform TTL means the front of the queue is
+    /// the oldest entry, so this stops at the first live one.
+    fn drop_expired(&mut self, now: Instant) {
+        while let Some((seq, key)) = self.order.front() {
+            let expired = match self.entries.get(key) {
+                Some(entry) if entry.seq == *seq => {
+                    if entry.expires_at > now {
+                        return;
+                    }
+                    Some(key.clone())
+                }
+                // Replaced or already removed: a stale slot, not an expiry.
+                _ => None,
+            };
+            self.order.pop_front();
+            if let Some(key) = expired {
+                self.entries.remove(&key);
+            }
+        }
+    }
+
+    fn evict_oldest(&mut self) {
+        while let Some((seq, key)) = self.order.pop_front() {
+            if self.entries.get(&key).is_some_and(|entry| entry.seq == seq) {
+                self.entries.remove(&key);
+                return;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn expire_for_test(&mut self, key: &str) {
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.expires_at = Instant::now() - Duration::from_secs(1);
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Debug)]
 struct ReadCache {
-    terminal_jobs:   HashMap<String, ReadCacheEntry<JobView>>,
-    ready_artifacts: HashMap<String, ReadCacheEntry<ArtifactRecord>>,
-    device_access:   HashMap<String, ReadCacheEntry<Vec<nagisalake_hub_store::DeviceAccess>>>,
+    terminal_jobs:   TtlCache<JobView>,
+    ready_artifacts: TtlCache<ArtifactRecord>,
+    device_access:   TtlCache<Vec<nagisalake_hub_store::DeviceAccess>>,
+}
+
+impl Default for ReadCache {
+    fn default() -> Self {
+        Self {
+            terminal_jobs:   TtlCache::new(READ_CACHE_TTL, READ_CACHE_CAPACITY),
+            ready_artifacts: TtlCache::new(READ_CACHE_TTL, READ_CACHE_CAPACITY),
+            device_access:   TtlCache::new(DEVICE_ACCESS_CACHE_TTL, DEVICE_ACCESS_CACHE_CAPACITY),
+        }
+    }
 }
 
 impl ReadCache {
     fn get_job(&mut self, key: &str) -> Option<JobView> {
-        let now = Instant::now();
-        let entry = self.terminal_jobs.get(key)?;
-        if entry.expires_at <= now {
-            self.terminal_jobs.remove(key);
-            return None;
-        }
-        Some(entry.value.clone())
+        self.terminal_jobs.get(key)
     }
 
     fn insert_job(&mut self, key: String, value: JobView) {
-        let now = Instant::now();
-        self.terminal_jobs.retain(|_, entry| entry.expires_at > now);
-        if self.terminal_jobs.len() >= READ_CACHE_CAPACITY
-            && !self.terminal_jobs.contains_key(&key)
-            && let Some(oldest) = self
-                .terminal_jobs
-                .iter()
-                .min_by_key(|(_, entry)| entry.expires_at)
-                .map(|(key, _)| key.clone())
-        {
-            self.terminal_jobs.remove(&oldest);
-        }
-        self.terminal_jobs.insert(key, ReadCacheEntry {
-            value,
-            expires_at: now + READ_CACHE_TTL,
-        });
+        self.terminal_jobs.insert(key, value);
     }
 
     fn get_artifact(&mut self, key: &str) -> Option<ArtifactRecord> {
-        let now = Instant::now();
-        let entry = self.ready_artifacts.get(key)?;
-        if entry.expires_at <= now {
-            self.ready_artifacts.remove(key);
-            return None;
-        }
-        Some(entry.value.clone())
+        self.ready_artifacts.get(key)
     }
 
     fn insert_artifact(&mut self, key: String, value: ArtifactRecord) {
-        let now = Instant::now();
-        self.ready_artifacts
-            .retain(|_, entry| entry.expires_at > now);
-        if self.ready_artifacts.len() >= READ_CACHE_CAPACITY
-            && !self.ready_artifacts.contains_key(&key)
-            && let Some(oldest) = self
-                .ready_artifacts
-                .iter()
-                .min_by_key(|(_, entry)| entry.expires_at)
-                .map(|(key, _)| key.clone())
-        {
-            self.ready_artifacts.remove(&oldest);
-        }
-        self.ready_artifacts.insert(key, ReadCacheEntry {
-            value,
-            expires_at: now + READ_CACHE_TTL,
-        });
+        self.ready_artifacts.insert(key, value);
     }
 
     fn remove_artifact(&mut self, key: &str) {
@@ -194,13 +277,7 @@ impl ReadCache {
     }
 
     fn get_device_access(&mut self, key: &str) -> Option<Vec<nagisalake_hub_store::DeviceAccess>> {
-        let now = Instant::now();
-        let entry = self.device_access.get(key)?;
-        if entry.expires_at <= now {
-            self.device_access.remove(key);
-            return None;
-        }
-        Some(entry.value.clone())
+        self.device_access.get(key)
     }
 
     fn insert_device_access(
@@ -208,33 +285,17 @@ impl ReadCache {
         key: String,
         value: Vec<nagisalake_hub_store::DeviceAccess>,
     ) {
-        let now = Instant::now();
-        self.device_access.retain(|_, entry| entry.expires_at > now);
-        if self.device_access.len() >= DEVICE_ACCESS_CACHE_CAPACITY
-            && !self.device_access.contains_key(&key)
-            && let Some(oldest) = self
-                .device_access
-                .iter()
-                .min_by_key(|(_, entry)| entry.expires_at)
-                .map(|(key, _)| key.clone())
-        {
-            self.device_access.remove(&oldest);
-        }
-        self.device_access.insert(key, ReadCacheEntry {
-            value,
-            expires_at: now + DEVICE_ACCESS_CACHE_TTL,
-        });
+        self.device_access.insert(key, value);
     }
 
     fn remove_device_access_for_user(&mut self, user_id: &str) {
         let suffix = format!("\0{user_id}");
-        self.device_access.retain(|key, _| !key.ends_with(&suffix));
+        self.device_access.retain(|key| !key.ends_with(&suffix));
     }
 
     fn remove_device_access_for_organization(&mut self, organization_id: &str) {
         let prefix = format!("{organization_id}\0");
-        self.device_access
-            .retain(|key, _| !key.starts_with(&prefix));
+        self.device_access.retain(|key| !key.starts_with(&prefix));
     }
 }
 
@@ -243,8 +304,19 @@ impl ReadCache {
 /// they can pile up on the same database row lock.
 #[derive(Clone, Default)]
 pub(super) struct QuotaGate {
-    locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    locks: Arc<Mutex<QuotaLocks>>,
 }
+
+#[derive(Default)]
+struct QuotaLocks {
+    entries:  HashMap<String, Arc<Mutex<()>>>,
+    /// Size the map is allowed to reach before the next idle sweep.
+    sweep_at: usize,
+}
+
+/// Smallest map size worth sweeping. Below this the sweep costs more than the
+/// memory it reclaims.
+const QUOTA_GATE_MIN_SWEEP: usize = 64;
 
 impl QuotaGate {
     async fn acquire(&self, organization_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
@@ -252,11 +324,27 @@ impl QuotaGate {
             let mut locks = self.locks.lock().await;
             // Drop idle entries so a long-lived single-instance Hub does not
             // retain one mutex forever for every organization ever observed.
-            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-            locks
-                .entry(organization_id.to_owned())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
+            //
+            // Amortized rather than per-acquire: this sweep is O(organizations)
+            // and it ran while holding the one mutex every quota mutation needs,
+            // so a Hub with many tenants paid a full scan on every submission,
+            // artifact reservation and release. Sweeping only when the map has
+            // grown past a threshold keeps the bound while making the common
+            // acquisition a single hash lookup.
+            if locks.entries.len() >= locks.sweep_at.max(QUOTA_GATE_MIN_SWEEP) {
+                locks.entries.retain(|_, lock| Arc::strong_count(lock) > 1);
+                // Next sweep once the live set has room to double again.
+                locks.sweep_at = locks.entries.len().saturating_mul(2);
+            }
+            if let Some(lock) = locks.entries.get(organization_id) {
+                lock.clone()
+            } else {
+                let lock = Arc::new(Mutex::new(()));
+                locks
+                    .entries
+                    .insert(organization_id.to_owned(), lock.clone());
+                lock
+            }
         };
         lock.lock_owned().await
     }
@@ -315,6 +403,7 @@ pub struct AppState {
     pub(super) http_client:     reqwest::Client,
     pub(super) rate_limiter:    crate::ratelimit::RateLimiter,
     pub(super) metrics:         Arc<HubMetrics>,
+    pub(crate) agent: Option<crate::agent::AgentState<nagisalake_agent::opencode::OpenCode>>,
 }
 
 #[derive(Debug, Default)]
@@ -641,6 +730,11 @@ impl AppState {
         } else {
             crate::ratelimit::RateLimiter::disabled()
         };
+        let agent = config
+            .opencode
+            .as_ref()
+            .map(crate::AgentConfig::build)
+            .transpose()?;
         Ok(Self {
             config: Arc::new(config),
             sessions: SessionRegistry::default(),
@@ -653,6 +747,7 @@ impl AppState {
             http_client,
             rate_limiter,
             metrics: Arc::new(HubMetrics::default()),
+            agent,
         })
     }
 
@@ -861,7 +956,17 @@ pub(super) async fn hydrate_hub_data(store: &PgStore) -> Result<HubData, HubErro
             object_key:      artifact.object_key,
         });
     }
-    let events = store.events_for_unfinished_jobs().await?;
+    // Index once, not once per job. Filtering E events for every unfinished
+    // job made recovery O(J * E), even though each event belongs to one job.
+    let mut events_by_org: HashMap<String, HashMap<String, Vec<_>>> = HashMap::new();
+    for event in store.events_for_unfinished_jobs().await? {
+        events_by_org
+            .entry(event.organization_id.clone())
+            .or_default()
+            .entry(event.job_id.clone())
+            .or_default()
+            .push(event);
+    }
     for job in store.unfinished_jobs().await? {
         let state = parse_job_state(&job.state)?;
         let worker_organization_id = job.worker_organization_id.clone().unwrap_or_default();
@@ -889,9 +994,14 @@ pub(super) async fn hydrate_hub_data(store: &PgStore) -> Result<HubData, HubErro
             })?;
         let attempt = u32::try_from(job.attempt)
             .map_err(|_| HubError::InvalidConfig("persisted job attempt is invalid".into()))?;
-        let mut job_events = events
-            .iter()
-            .filter(|event| event.organization_id == job.organization_id && event.job_id == job.id)
+        let events = events_by_org
+            .get_mut(&job.organization_id)
+            .and_then(|events| events.remove(&job.id))
+            .unwrap_or_default();
+        let keep_from = events.len().saturating_sub(256);
+        let job_events = events
+            .into_iter()
+            .skip(keep_from)
             .map(|event| {
                 Ok(JobEventView {
                     sequence: u64::try_from(event.sequence).map_err(|_| {
@@ -904,9 +1014,6 @@ pub(super) async fn hydrate_hub_data(store: &PgStore) -> Result<HubData, HubErro
                 })
             })
             .collect::<Result<Vec<_>, HubError>>()?;
-        if job_events.len() > 256 {
-            job_events.drain(..job_events.len() - 256);
-        }
         let record = JobRecord {
             organization_id: job.organization_id,
             actor_id: job.actor_id,
@@ -1149,6 +1256,39 @@ pub(super) fn map_store_error(error: StoreError) -> HubError {
 mod read_cache_tests {
     use super::*;
 
+    #[test]
+    fn reinserting_a_hot_key_cannot_grow_the_eviction_queue_unboundedly() {
+        let mut cache = TtlCache::new(Duration::from_secs(60), 4);
+        cache.insert("cold".into(), 0);
+        for index in 0..10_000 {
+            cache.insert("hot".into(), index);
+        }
+        assert_eq!(cache.len(), 2);
+        assert!(cache.order.len() <= 8);
+        assert_eq!(cache.get("cold"), Some(0));
+        assert_eq!(cache.get("hot"), Some(9_999));
+    }
+
+    #[tokio::test]
+    async fn quota_gate_sweeps_never_replace_a_live_organization_lock() {
+        let gate = QuotaGate::default();
+        let held = gate.acquire("held").await;
+        for index in 0..256 {
+            drop(gate.acquire(&format!("org-{index}")).await);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), gate.acquire("held"))
+                .await
+                .is_err()
+        );
+        drop(held);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), gate.acquire("held"))
+                .await
+                .is_ok()
+        );
+    }
+
     fn terminal_job(id: &str) -> JobView {
         JobView {
             id:                  id.into(),
@@ -1176,11 +1316,7 @@ mod read_cache_tests {
         assert!(cache.get_job("tenant-a\0job-1").is_some());
         assert!(cache.get_job("tenant-b\0job-1").is_none());
 
-        cache
-            .terminal_jobs
-            .get_mut("tenant-a\0job-1")
-            .expect("test entry exists")
-            .expires_at = Instant::now() - Duration::from_secs(1);
+        cache.terminal_jobs.expire_for_test("tenant-a\0job-1");
         assert!(cache.get_job("tenant-a\0job-1").is_none());
     }
 
@@ -1214,5 +1350,43 @@ mod read_cache_tests {
         cache.remove_device_access_for_user("user-1");
         assert!(cache.get_device_access("org-a\0user-1").is_none());
         assert!(cache.get_device_access("org-b\0user-1").is_none());
+    }
+
+    /// The eviction queue holds one slot per insert, so a re-inserted key leaves
+    /// a stale slot behind. Those must be skipped rather than counted as
+    /// evictions, or the cache would evict live entries and shrink below its
+    /// capacity.
+    #[test]
+    fn a_full_cache_evicts_the_oldest_entry_and_stays_at_capacity() {
+        let mut cache = TtlCache::new(Duration::from_secs(60), 3);
+        for index in 0..3 {
+            cache.insert(format!("key-{index}"), index);
+        }
+        // Re-inserting the oldest key both refreshes it and orphans its slot.
+        cache.insert("key-0".into(), 100);
+        assert_eq!(cache.len(), 3);
+
+        cache.insert("key-3".into(), 3);
+        assert_eq!(cache.len(), 3, "capacity must hold after a stale slot");
+        // key-1 was the oldest live entry once key-0 was refreshed.
+        assert!(cache.get("key-1").is_none());
+        assert_eq!(cache.get("key-0"), Some(100));
+        assert_eq!(cache.get("key-3"), Some(3));
+    }
+
+    /// Expiry is a prefix sweep, so it must stop at the first live entry instead
+    /// of dropping newer ones behind it.
+    #[test]
+    fn expired_entries_are_dropped_without_touching_live_ones() {
+        let mut cache = TtlCache::new(Duration::from_secs(60), 8);
+        cache.insert("stale".into(), 1);
+        cache.insert("fresh".into(), 2);
+        cache.expire_for_test("stale");
+
+        // Any insert sweeps the expired prefix.
+        cache.insert("other".into(), 3);
+        assert_eq!(cache.len(), 2, "only the expired entry may be dropped");
+        assert_eq!(cache.get("fresh"), Some(2));
+        assert_eq!(cache.get("other"), Some(3));
     }
 }

@@ -15,8 +15,10 @@
 //! serves. A multi-Hub setup would need a shared counter, and until then a
 //! second replica would multiply every limit by the number of replicas.
 
+use hashbrown::HashTable;
 use std::{
-    collections::HashMap,
+    collections::{VecDeque, hash_map::RandomState},
+    hash::BuildHasher,
     net::IpAddr,
     sync::Arc,
     time::{Duration, Instant},
@@ -54,8 +56,64 @@ impl Quota {
 
 #[derive(Debug)]
 struct Bucket {
+    /// Stored so a bucket can be rehashed on resize and compared on lookup
+    /// without materializing a joined `scope\0key` string per request.
+    scope:     Box<str>,
+    key:       Box<str>,
     tokens:    f64,
     last_seen: Instant,
+    sequence:  u64,
+}
+
+impl Bucket {
+    fn consume(&mut self, now: Instant, quota: Quota) -> Decision {
+        let elapsed = now.saturating_duration_since(self.last_seen).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * quota.refill_per_second).min(quota.capacity);
+        self.last_seen = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            Decision::Allow
+        } else {
+            Decision::Deny {
+                retry_after_seconds: quota.retry_after(self.tokens).as_secs().max(1),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Shard {
+    buckets:       HashTable<Bucket>,
+    order:         VecDeque<(u64, u64)>, // (access sequence, hash), no duplicated strings
+    next_sequence: u64,
+}
+
+impl Shard {
+    fn record_access(&mut self, sequence: u64, hash: u64) {
+        self.order.push_back((sequence, hash));
+        // A hot key can leave stale slots behind an untouched cold key. Keep
+        // queue storage bounded as well as bucket storage, amortizing cleanup.
+        if self.order.len() > MAX_BUCKETS_PER_SHARD * 2 {
+            let buckets = &self.buckets;
+            self.order.retain(|(seq, hash)| {
+                buckets
+                    .find(*hash, |bucket| bucket.sequence == *seq)
+                    .is_some()
+            });
+        }
+    }
+
+    fn evict_oldest(&mut self) {
+        while let Some((sequence, hash)) = self.order.pop_front() {
+            if let Ok(entry) = self
+                .buckets
+                .find_entry(hash, |bucket| bucket.sequence == sequence)
+            {
+                entry.remove();
+                break;
+            }
+        }
+    }
 }
 
 /// Outcome of a rate limit check.
@@ -114,10 +172,19 @@ impl Default for Limits {
 }
 
 /// In-memory limiter.
+///
+/// Sharded because every authenticated request and every job submission passes
+/// through here: a single `Mutex<HashMap>` made this the one point all of them
+/// serialize on, and each check also allocated a `format!("{scope}\0{key}")`
+/// lookup key. Lookups now hash `(scope, key)` in place and only touch one
+/// shard, so unrelated addresses and organizations no longer contend.
 #[derive(Clone)]
 pub struct RateLimiter {
     limits:  Limits,
-    buckets: Arc<Mutex<HashMap<String, Bucket>>>,
+    shards:  Arc<[Mutex<Shard>]>,
+    /// One instance-wide seed. A fixed hasher would let a caller that controls
+    /// keys (addresses, account ids) pick colliding ones on purpose.
+    hasher:  RandomState,
     enabled: bool,
 }
 
@@ -128,12 +195,17 @@ const IDLE_EVICTION: Duration = Duration::from_secs(3600);
 /// evicting the least recently seen keeps memory bounded at the cost of
 /// forgetting the oldest offender first.
 const MAX_BUCKETS: usize = 100_000;
+/// Lock shards. Sized so a busy Hub spreads unrelated keys across locks while
+/// each shard's map stays large enough for the eviction scan to be rare.
+const SHARDS: usize = 16;
+const MAX_BUCKETS_PER_SHARD: usize = MAX_BUCKETS / SHARDS;
 
 impl RateLimiter {
     pub fn new(limits: Limits) -> Self {
         Self {
             limits,
-            buckets: Arc::new(Mutex::new(HashMap::new())),
+            shards: Self::new_shards(),
+            hasher: RandomState::new(),
             enabled: true,
         }
     }
@@ -143,55 +215,67 @@ impl RateLimiter {
     pub fn disabled() -> Self {
         Self {
             limits:  Limits::default(),
-            buckets: Arc::new(Mutex::new(HashMap::new())),
+            shards:  Self::new_shards(),
+            hasher:  RandomState::new(),
             enabled: false,
         }
+    }
+
+    fn new_shards() -> Arc<[Mutex<Shard>]> {
+        (0..SHARDS).map(|_| Mutex::new(Shard::default())).collect()
     }
 
     pub const fn limits(&self) -> &Limits {
         &self.limits
     }
 
+    fn hash_of(&self, scope: &str, key: &str) -> u64 {
+        self.hasher.hash_one((scope, key))
+    }
+
+    /// Uses the high bits: the low bits also pick the slot inside the shard's
+    /// own table, so reusing them would correlate shard choice with slot choice.
+    fn shard_for(&self, hash: u64) -> &Mutex<Shard> {
+        &self.shards[usize::try_from(hash >> 32).unwrap_or(0) % SHARDS]
+    }
+
     pub async fn check(&self, scope: &str, key: &str, quota: Quota) -> Decision {
         if !self.enabled {
             return Decision::Allow;
         }
+        let hash = self.hash_of(scope, key);
+        let mut shard = self.shard_for(hash).lock().await;
         let now = Instant::now();
-        let mut buckets = self.buckets.lock().await;
+        let sequence = shard.next_sequence;
+        shard.next_sequence = sequence.wrapping_add(1);
 
-        if buckets.len() >= MAX_BUCKETS {
-            buckets.retain(|_key, bucket| now.duration_since(bucket.last_seen) < IDLE_EVICTION);
-            if buckets.len() >= MAX_BUCKETS {
-                // Still full: drop the single oldest so the current caller is
-                // still measured rather than silently allowed.
-                if let Some(oldest) = buckets
-                    .iter()
-                    .min_by_key(|(_key, bucket)| bucket.last_seen)
-                    .map(|(key, _bucket)| key.clone())
-                {
-                    buckets.remove(&oldest);
-                }
-            }
-        }
-
-        let bucket = buckets
-            .entry(format!("{scope}\u{0}{key}"))
-            .or_insert_with(|| Bucket {
-                tokens:    quota.capacity,
-                last_seen: now,
-            });
-        let elapsed = now.duration_since(bucket.last_seen).as_secs_f64();
-        bucket.tokens = (bucket.tokens + elapsed * quota.refill_per_second).min(quota.capacity);
-        bucket.last_seen = now;
-
-        if bucket.tokens >= 1.0 {
-            bucket.tokens -= 1.0;
-            Decision::Allow
+        // An existing caller must never trigger eviction and replenish its own
+        // quota just because the map is full. Hits need no allocated lookup
+        // key; recency metadata is compacted only at its amortized size bound.
+        let decision = if let Some(bucket) = shard.buckets.find_mut(hash, |bucket| {
+            &*bucket.scope == scope && &*bucket.key == key
+        }) {
+            bucket.sequence = sequence;
+            bucket.consume(now, quota)
         } else {
-            Decision::Deny {
-                retry_after_seconds: quota.retry_after(bucket.tokens).as_secs().max(1),
+            if shard.buckets.len() >= MAX_BUCKETS_PER_SHARD {
+                shard.evict_oldest();
             }
-        }
+            let mut bucket = Bucket {
+                scope: scope.into(),
+                key: key.into(),
+                tokens: quota.capacity,
+                last_seen: now,
+                sequence,
+            };
+            let decision = bucket.consume(now, quota);
+            shard.buckets.insert_unique(hash, bucket, |bucket| {
+                self.hash_of(&bucket.scope, &bucket.key)
+            });
+            decision
+        };
+        shard.record_access(sequence, hash);
+        decision
     }
 
     /// Returns tokens after a successful sign-in.
@@ -203,10 +287,13 @@ impl RateLimiter {
         if !self.enabled {
             return;
         }
-        self.buckets
-            .lock()
-            .await
-            .remove(&format!("{scope}\u{0}{key}"));
+        let hash = self.hash_of(scope, key);
+        let mut shard = self.shard_for(hash).lock().await;
+        if let Ok(entry) = shard.buckets.find_entry(hash, |bucket| {
+            &*bucket.scope == scope && &*bucket.key == key
+        }) {
+            entry.remove();
+        }
     }
 
     /// Drops idle buckets. Called on a timer by the Hub.
@@ -215,15 +302,25 @@ impl RateLimiter {
             return 0;
         }
         let now = Instant::now();
-        let mut buckets = self.buckets.lock().await;
-        let before = buckets.len();
-        buckets.retain(|_key, bucket| now.duration_since(bucket.last_seen) < IDLE_EVICTION);
-        before - buckets.len()
+        let mut dropped = 0;
+        for shard in self.shards.iter() {
+            let mut shard = shard.lock().await;
+            let before = shard.buckets.len();
+            shard
+                .buckets
+                .retain(|bucket| now.duration_since(bucket.last_seen) < IDLE_EVICTION);
+            dropped += before - shard.buckets.len();
+        }
+        dropped
     }
 
     #[cfg(test)]
     async fn bucket_count(&self) -> usize {
-        self.buckets.lock().await.len()
+        let mut total = 0;
+        for shard in self.shards.iter() {
+            total += shard.lock().await.buckets.len();
+        }
+        total
     }
 }
 
@@ -260,6 +357,58 @@ pub fn client_address(
 mod tests {
     use super::*;
     use axum::http::{HeaderMap, HeaderValue};
+
+    #[tokio::test]
+    async fn a_full_shard_does_not_evict_or_refill_an_existing_caller() {
+        let limiter = RateLimiter::new(Limits::default());
+        let hash = limiter.hash_of("test", "victim");
+        {
+            let mut shard = limiter.shard_for(hash).lock().await;
+            for index in 0..MAX_BUCKETS_PER_SHARD {
+                let key = if index == 0 {
+                    "victim".to_owned()
+                } else {
+                    format!("key-{index}")
+                };
+                let entry_hash = limiter.hash_of("test", &key);
+                shard.buckets.insert_unique(
+                    entry_hash,
+                    Bucket {
+                        scope:     "test".into(),
+                        key:       key.into(),
+                        tokens:    0.0,
+                        last_seen: Instant::now(),
+                        sequence:  index as u64,
+                    },
+                    |bucket| limiter.hash_of(&bucket.scope, &bucket.key),
+                );
+                shard.order.push_back((index as u64, entry_hash));
+            }
+            shard.next_sequence = MAX_BUCKETS_PER_SHARD as u64;
+        }
+        assert!(
+            !limiter
+                .check("test", "victim", Quota::new(1, 0.0))
+                .await
+                .is_allowed()
+        );
+        assert_eq!(
+            limiter.shard_for(hash).lock().await.buckets.len(),
+            MAX_BUCKETS_PER_SHARD
+        );
+    }
+
+    #[tokio::test]
+    async fn hot_keys_keep_the_recency_queue_bounded() {
+        let limiter = RateLimiter::new(Limits::default());
+        for _ in 0..MAX_BUCKETS_PER_SHARD * 3 {
+            limiter.check("scope", "hot", Quota::new(1, 0.0)).await;
+        }
+        let hash = limiter.hash_of("scope", "hot");
+        let shard = limiter.shard_for(hash).lock().await;
+        assert_eq!(shard.buckets.len(), 1);
+        assert!(shard.order.len() <= 2 * MAX_BUCKETS_PER_SHARD);
+    }
 
     #[tokio::test]
     async fn a_bucket_allows_its_capacity_then_denies() {

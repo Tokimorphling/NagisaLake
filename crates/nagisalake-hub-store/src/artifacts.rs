@@ -111,6 +111,32 @@ impl PgStore {
         .map(Into::into))
     }
 
+    /// Fetches several artifacts of one organization in a single round trip.
+    ///
+    /// The dispatch path needs every input artifact of a job. Asking for them
+    /// one at a time added N sequential round trips to each outbox delivery.
+    pub async fn artifacts_by_ids(
+        &self,
+        organization_id: &str,
+        ids: &[String],
+    ) -> Result<Vec<StoredArtifact>, StoreError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(query_as::<_, ArtifactRow>(
+            "SELECT organization_id,id,job_id,name,content_type,size_bytes,sha256,state,\
+             object_key,created_at,updated_at FROM artifacts WHERE organization_id=$1 AND \
+             id=ANY($2)",
+        )
+        .bind(organization_id)
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+    }
+
     pub async fn artifacts(
         &self,
         organization_id: &str,

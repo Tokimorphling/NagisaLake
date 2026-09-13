@@ -28,6 +28,9 @@ pub struct HubConfig {
     pub rate_limit:   RateLimitConfig,
     #[serde(default)]
     pub log:          LogConfig,
+    /// Optional private agent execution engine; absent leaves the rest of the Hub unchanged.
+    #[serde(default)]
+    pub opencode:     Option<crate::AgentConfig>,
 }
 
 /// Log verbosity. `RUST_LOG` overrides this when set, so the file value is a
@@ -322,6 +325,9 @@ impl HubConfig {
             return Err(HubError::InvalidConfig(
                 "browser session TTL values must be greater than zero".into(),
             ));
+        }
+        if let Some(opencode) = &self.opencode {
+            opencode.validate()?;
         }
         self.validate_exposure()?;
         if self.browser.registration_enabled

@@ -42,6 +42,7 @@ use std::{
 use tracing::warn;
 use uuid::Uuid;
 
+mod agents;
 mod authentication;
 mod batches;
 mod devices_workflows;
@@ -60,6 +61,13 @@ pub(super) fn is_same_origin(origin: &str, headers: &HeaderMap) -> bool {
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/v1/agent/skills", get(agents::skills))
+        .route("/api/v1/agent/runs", post(agents::run))
+        .route("/api/v1/agent/runs/stream", post(agents::stream_run))
+        .route("/api/v1/agent/runs/{id}", get(agents::get_run))
+        .route("/api/v1/agent/runs/{id}/cancel", post(agents::cancel))
+        .route("/v1/enhance", post(agents::run))
+        .route("/v1/enhance/stream", post(agents::stream_run))
         .route("/api/v1/settings/public", get(public_settings))
         .route("/api/v1/openapi.yaml", get(openapi_spec))
         .route("/api/v1/auth/register", post(authentication::register))

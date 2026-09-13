@@ -277,6 +277,31 @@ impl SessionRegistry {
         Some(worker_view_with_reservations(session))
     }
 
+    /// Reserves an already-authorized exact target without scanning the global
+    /// registry. Batch scheduling persists that target at admission time.
+    pub(super) async fn reserve_capacity_on<F>(
+        &self,
+        organization_id: &str,
+        worker_id: &str,
+        command_id: &str,
+        predicate: F,
+    ) -> Option<WorkerView>
+    where
+        F: Fn(&WorkerView) -> bool,
+    {
+        let mut sessions = self.inner.write().await;
+        let session = sessions.get_mut(&session_key(organization_id, worker_id))?;
+        if !predicate(&session.view)
+            || worker_capacity_load(session) >= session.view.capabilities.total_capacity()
+            || !session
+                .pending_capacity_reservations
+                .insert(command_id.to_owned())
+        {
+            return None;
+        }
+        Some(worker_view_with_reservations(session))
+    }
+
     /// Ensures one slot is reserved on an exact session for a durable command.
     ///
     /// The scheduler may already have made this reservation. After a Hub
@@ -502,27 +527,33 @@ impl SessionRegistry {
         message: HubMessage,
         timeout: Duration,
     ) -> Result<CommandAck, HubError> {
-        let session = self
+        // Only the command channels are needed here. Cloning WorkerSession
+        // also copied workflow manifests, labels and both reservation sets.
+        let (outbound, pending) = self
             .inner
             .read()
             .await
             .get(&session_key(organization_id, worker_id))
             .filter(|session| session.view.session_id == session_id)
-            .cloned()
+            .map(|session| (session.outbound.clone(), session.pending.clone()))
             .ok_or_else(|| HubError::Conflict("worker session is not connected".into()))?;
         let (sender, receiver) = oneshot::channel();
-        session
-            .pending
-            .lock()
-            .await
-            .insert(command_id.into(), sender);
-        if session.outbound.send(message).await.is_err() {
-            session.pending.lock().await.remove(command_id);
+        pending.lock().await.insert(command_id.into(), sender);
+        let deadline = tokio::time::Instant::now() + timeout;
+        // Include queue backpressure in the ACK budget. Otherwise a full
+        // outbound channel could block the outbox indefinitely before timing.
+        if !matches!(
+            tokio::time::timeout_at(deadline, outbound.send(message)).await,
+            Ok(Ok(()))
+        ) {
+            pending.lock().await.remove(command_id);
             self.release_capacity_reservation(organization_id, worker_id, session_id, command_id)
                 .await;
-            return Err(HubError::Unavailable("worker socket is closed".into()));
+            return Err(HubError::Unavailable(
+                "worker socket is closed or congested".into(),
+            ));
         }
-        match tokio::time::timeout(timeout, receiver).await {
+        match tokio::time::timeout_at(deadline, receiver).await {
             Ok(Ok(ack)) => Ok(ack),
             Ok(Err(_)) => {
                 self.mark_capacity_reservation_uncertain(
@@ -537,7 +568,7 @@ impl SessionRegistry {
                 ))
             }
             Err(_) => {
-                session.pending.lock().await.remove(command_id);
+                pending.lock().await.remove(command_id);
                 self.mark_capacity_reservation_uncertain(
                     organization_id,
                     worker_id,

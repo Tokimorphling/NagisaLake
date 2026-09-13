@@ -13,6 +13,7 @@
 | 设备 | `workers`、`worker_workflows`、`workflow_versions` | 稳定设备 identity、设备与 workflow 映射、manifest 版本 |
 | 分享 | `device_share_invites`、`device_grants` | 有期限邀请码和跨账户设备授权 |
 | 执行 | `jobs`、`job_events`、`dispatch_outbox`、`idempotency_records` | job 状态、事件、待派发记录和请求幂等 |
+| Agent | `agent_executions` | 独立文本 skill 的 owner、输入、输出、版本、终态及 deadline；不保存工具内容或 reasoning |
 | 数据 | `artifacts`、`artifact_upload_requests` | 对象元数据、上传和 Worker 输出请求恢复 |
 | 配额 | `quota_policies`、`quota_usage`、`usage_ledger` | 并发、周期 job、存储预占与幂等释放 |
 | 审计 | `audit_logs` | actor、request、动作、资源、结果与脱敏 metadata |
@@ -94,8 +95,13 @@ owner 租约和跨实例消息路由。
 
 ## 启动恢复
 
-Hub 启动后从 PostgreSQL hydrate artifact、upload request、workflow、job 和 job event 到本地路由
-缓存。完成状态、输出请求幂等和离线 workflow 因此能跨重启恢复；Worker 重连后重新建立在线 session。
+Hub 启动只 hydrate 未结束 job、其事件及待上传 artifact；事件先按组织/job 分组，不再对每个 job
+重复扫描整个事件集合。完成历史按需从 PostgreSQL 读取，Worker 重连后重建在线 session。
+
+Agent 执行另用 `agent_executions`（迁移 `0016`），查询同时限定 organization 与 owner。
+终态写入不能覆盖已结束记录；重启遗留的 running 执行在 deadline 过期后读取为 failed/interrupted。
+活跃 agent 的并发限制与取消路由仍是单实例内存态，不把数据库中的历史记录当成活跃任务重新提交。
+详情见 [Agent 接口](AGENT_API_CN.md)。
 
 备份应把 PostgreSQL PITR/快照与对象存储版本策略作为一组恢复点。数据库恢复但对象缺失时，artifact
 metadata 仍存在但下载/校验会失败；对象恢复但数据库缺失时，对象会成为孤立数据。详细步骤见

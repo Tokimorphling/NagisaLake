@@ -9,6 +9,7 @@ import { Badge, EmptyState, JobStateBadge } from '@/components/ui/display'
 import { Button, Card, Textarea, cx } from '@/components/ui/primitives'
 import { GalleryGrid, GalleryLightbox } from '@/components/gallery/GalleryPrimitives'
 import { JobForm } from '@/pages/workflows/JobForm'
+import { AgentPanel } from '@/features/agent/AgentPanel'
 import { modelsForMedia, resolveStudioWorkflow, STUDIO_MODELS, type StudioMedia, type StudioModel } from '@/features/studio/catalog/models'
 
 function mediaFromRoute(value: string | undefined): StudioMedia {
@@ -137,6 +138,7 @@ export function StudioPage() {
               <div className="space-y-2">
                 <label htmlFor="studio-prompt" className="text-xs font-medium text-muted">提示词 {promptName && <span className="text-subtle">· {promptName}</span>}</label>
                 <Textarea ref={promptRef} id="studio-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述主体、动作、镜头和氛围…" className="min-h-28 resize-y bg-surface-2/60" />
+                {organizationId && atLeast('member') && <AgentPanel key={organizationId} organizationId={organizationId} input={prompt} onApply={setPrompt} />}
               </div>
               <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-3 text-[11px] text-subtle">
                 <span>高级参数在提交面板中按 manifest 展开</span>

@@ -18,7 +18,125 @@ tags:
   - name: artifacts
   - name: gallery
   - name: jobs
+  - name: agent
 paths:
+  /agent/skills:
+    get:
+      tags: [agent]
+      operationId: listAgentSkills
+      security: [{ bearerAuth: [] }]
+      description: Configured skill allowlist; requires jobs:write. Discovery never grants permission.
+      responses:
+        '200':
+          description: Agent capability catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, items]
+                properties:
+                  enabled: { type: boolean }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentSkill' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /agent/runs:
+    post:
+      tags: [agent]
+      operationId: executeAgentSkill
+      security: [{ bearerAuth: [] }]
+      description: Execute one allowed text skill and wait for a terminal event. Requires jobs:write. Do not automatically replay a failed POST.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentRunRequest' }
+      responses:
+        '200':
+          description: Completed execution
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCompleted' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+        '409':
+          description: Execution cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCancelled' }
+        '502':
+          description: Upstream execution failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentFailure' }
+        '504':
+          description: Execution deadline exceeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentFailure' }
+  /agent/runs/stream:
+    post:
+      tags: [agent]
+      operationId: streamAgentSkill
+      security: [{ bearerAuth: [] }]
+      description: |
+        Same execution contract as POST /agent/runs, using authenticated fetch SSE.
+        Requires jobs:write. Event data uses AgentRunEvent. completed.text replaces
+        preview deltas. Disconnect cancels; EOF without a terminal event is not success.
+        No automatic POST replay or Last-Event-ID resume is supported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentRunRequest' }
+      responses:
+        '200':
+          description: started, stage_started/finished/failed, text_delta, warning, completed/error/cancelled
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /agent/runs/{id}:
+    get:
+      tags: [agent]
+      operationId: getAgentExecution
+      security: [{ bearerAuth: [] }]
+      description: PostgreSQL history, scoped to organization and owner. Requires jobs:read.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Business execution record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentExecution' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /agent/runs/{id}/cancel:
+    post:
+      tags: [agent]
+      operationId: cancelAgentExecution
+      security: [{ bearerAuth: [] }]
+      description: Cancel only the caller's own execution in the selected organization. Requires jobs:cancel.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Cancellation requested or persisted execution already terminal }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
   /openapi.yaml:
     get:
       tags: [auth]
@@ -901,6 +1019,86 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/AuthBody' }
   schemas:
+    AgentSkill:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, pattern: '^[A-Za-z0-9_-]+$' }
+        version: { type: string }
+    AgentRunRequest:
+      type: object
+      additionalProperties: false
+      required: [skill, input]
+      properties:
+        skill: { type: string }
+        input: { type: string, description: Nonempty; default maximum 64 KiB UTF-8 }
+        options:
+          type: object
+          maxProperties: 16
+          description: Task data only; does not select models, agents or permissions
+          additionalProperties: true
+    AgentCompleted:
+      type: object
+      required: [type, execution_id, text]
+      properties:
+        type: { const: completed }
+        execution_id: { type: string }
+        text: { type: string }
+    AgentFailure:
+      type: object
+      required: [type, execution_id, code, message]
+      properties:
+        type: { const: error }
+        execution_id: { type: string }
+        code: { type: string }
+        message: { type: string, description: Sanitized diagnostic, never the upstream error body }
+    AgentCancelled:
+      type: object
+      required: [type, execution_id]
+      properties:
+        type: { const: cancelled }
+        execution_id: { type: string }
+    AgentRunEvent:
+      oneOf:
+        - $ref: '#/components/schemas/AgentCompleted'
+        - $ref: '#/components/schemas/AgentFailure'
+        - $ref: '#/components/schemas/AgentCancelled'
+        - type: object
+          required: [type, execution_id, skill]
+          properties:
+            type: { const: started }
+            execution_id: { type: string }
+            skill: { type: string }
+        - type: object
+          required: [type, call_id, name]
+          properties:
+            type: { enum: [stage_started, stage_finished, stage_failed] }
+            call_id: { type: string }
+            name: { type: string }
+        - type: object
+          required: [type, text]
+          properties:
+            type: { const: text_delta }
+            text: { type: string }
+        - type: object
+          required: [type, code]
+          properties:
+            type: { const: warning }
+            code: { type: string }
+    AgentExecution:
+      type: object
+      required: [id, skill, skill_version, input, options_json, output, state, error_code, started_at, completed_at]
+      properties:
+        id: { type: string }
+        skill: { type: string }
+        skill_version: { type: string }
+        input: { type: string }
+        options_json: { type: string }
+        output: { type: [string, 'null'] }
+        state: { enum: [running, completed, failed, cancelled] }
+        error_code: { type: [string, 'null'] }
+        started_at: { type: integer, format: int64 }
+        completed_at: { type: [integer, 'null'], format: int64 }
     ErrorResponse:
       type: object
       required: [error]

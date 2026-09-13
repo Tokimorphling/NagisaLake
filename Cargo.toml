@@ -3,6 +3,7 @@ members = [
     "apps/nagisalake-hub",
     "apps/nagisalake-loadgen",
     "apps/nagisalake-worker",
+    "crates/nagisalake-agent",
     "crates/nagisalake-comfyui",
     "crates/nagisalake-core",
     "crates/nagisalake-hub-auth",
@@ -26,6 +27,7 @@ license = "MIT"
 rust-version = "1.88"
 
 [workspace.dependencies]
+nagisalake-agent = { path = "crates/nagisalake-agent" }
 nagisalake-comfyui = { path = "crates/nagisalake-comfyui" }
 nagisalake-core = { path = "crates/nagisalake-core" }
 nagisalake-hub-auth = { path = "crates/nagisalake-hub-auth" }

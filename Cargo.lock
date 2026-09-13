@@ -1954,6 +1954,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nagisalake-agent"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "clap",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "service-async",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "nagisalake-comfyui"
 version = "0.1.0"
 dependencies = [
@@ -1988,7 +2009,9 @@ dependencies = [
  "data-encoding",
  "faststr",
  "futures-util",
+ "hashbrown 0.16.1",
  "mime_guess",
+ "nagisalake-agent",
  "nagisalake-comfyui",
  "nagisalake-core",
  "nagisalake-hub-auth",

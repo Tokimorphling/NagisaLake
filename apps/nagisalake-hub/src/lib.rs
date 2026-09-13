@@ -11,6 +11,7 @@
 //! - [`router`]: public and worker control routes, useful for embedding/tests.
 //! - [`serve`]: Tokio listener and graceful shutdown wiring.
 
+mod agent;
 mod oauth;
 mod product_api;
 mod ratelimit;
@@ -49,7 +50,7 @@ use nagisalake_transport::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     env,
     net::SocketAddr,
     path::PathBuf,
@@ -92,6 +93,7 @@ mod worker;
 
 pub use self::{api::*, api_helpers::*, config::*, runtime::*, sessions::*, state::*};
 use self::{dispatch::*, jobs::*, maintenance::*, metrics::*, scheduler::*, worker::*};
+pub use agent::AgentConfig;
 
 #[cfg(test)]
 #[path = "hub/tests/mod.rs"]

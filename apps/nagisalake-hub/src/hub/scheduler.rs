@@ -111,14 +111,12 @@ pub(super) async fn dispatch_queued_job(
     let command_id = dispatch_command_id(job_id, attempt);
     let selected = state
         .sessions
-        .reserve_capacity(&command_id, |worker| {
-            worker.organization_id == target_org
-                && worker.worker_id == target_device
-                && worker
-                    .capabilities
-                    .workflows
-                    .iter()
-                    .any(|wf| wf.id == workflow_id && wf.version == workflow_version)
+        .reserve_capacity_on(&target_org, &target_device, &command_id, |worker| {
+            worker
+                .capabilities
+                .workflows
+                .iter()
+                .any(|wf| wf.id == workflow_id && wf.version == workflow_version)
         })
         .await;
 

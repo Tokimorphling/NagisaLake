@@ -69,6 +69,7 @@ async fn job_pages_cover_every_job_exactly_once() {
         return;
     };
     let config = crate::HubConfig {
+        opencode:     None,
         server:       crate::ServerConfig::default(),
         auth:         crate::AuthConfig::default(),
         browser:      crate::BrowserConfig {
@@ -217,6 +218,7 @@ async fn finished_jobs_are_served_from_the_store_after_leaving_the_cache() {
         return;
     };
     let config = crate::HubConfig {
+        opencode:     None,
         server:       crate::ServerConfig::default(),
         auth:         crate::AuthConfig::default(),
         browser:      crate::BrowserConfig {
@@ -436,6 +438,7 @@ async fn shared_device_flow_uses_distinct_browser_api_and_worker_credentials() {
         return;
     };
     let config = crate::HubConfig {
+        opencode:     None,
         server:       crate::ServerConfig::default(),
         auth:         crate::AuthConfig {
             worker_token: Some("legacy-worker".into()),

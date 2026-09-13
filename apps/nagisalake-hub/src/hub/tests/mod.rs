@@ -34,6 +34,7 @@ fn config() -> HubConfig {
             trust_forwarded_for: false,
         },
         log:          LogConfig::default(),
+        opencode:     None,
     }
 }
 

@@ -143,20 +143,36 @@ impl PgStore {
         if usage.0 >= quota.0 || period_jobs >= quota.1 {
             return Err(StoreError::QuotaExceeded("jobs".into()));
         }
-        for artifact_id in input_artifact_ids {
-            let result = query(
-                "UPDATE artifacts SET job_id=$1,updated_at=$2 WHERE organization_id=$3 AND id=$4 \
-                 AND state='ready' AND job_id IS NULL",
+        if !input_artifact_ids.is_empty() {
+            // One statement for the whole input set. Claiming them one at a time
+            // cost a database round trip per input while holding the tenant's
+            // quota-usage row lock, so a job with many inputs both submitted
+            // slower and blocked every other submission for that tenant longer.
+            let claimed = query_as::<_, (String,)>(
+                "UPDATE artifacts SET job_id=$1,updated_at=$2 WHERE organization_id=$3 AND \
+                 id=ANY($4) AND state='ready' AND job_id IS NULL RETURNING id",
             )
             .bind(input.id)
             .bind(input.now)
             .bind(input.organization_id)
-            .bind(artifact_id)
-            .execute(&mut *tx)
+            .bind(input_artifact_ids)
+            .fetch_all(&mut *tx)
             .await?;
-            if result.rows_affected() != 1 {
+            if claimed.len() != input_artifact_ids.len() {
+                // Report a specific id so the caller can tell which input was
+                // unusable rather than only that one of them was.
+                let claimed: std::collections::HashSet<&str> =
+                    claimed.iter().map(|(id,)| id.as_str()).collect();
+                let Some(unclaimed) = input_artifact_ids
+                    .iter()
+                    .find(|id| !claimed.contains(id.as_str()))
+                else {
+                    return Err(StoreError::Conflict(
+                        "input artifact ids must be unique".into(),
+                    ));
+                };
                 return Err(StoreError::Conflict(format!(
-                    "input artifact {artifact_id} is not ready or was claimed concurrently"
+                    "input artifact {unclaimed} is not ready or was claimed concurrently"
                 )));
             }
         }

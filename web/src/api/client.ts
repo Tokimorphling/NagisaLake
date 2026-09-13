@@ -199,7 +199,7 @@ export function request<T>(path: string, options: RequestOptions = {}): Promise<
  */
 export function openAuthenticatedStream(
   path: string,
-  options: Pick<RequestOptions, 'organizationId' | 'signal'> = {},
+  options: Pick<RequestOptions, 'organizationId' | 'signal' | 'method' | 'body'> = {},
 ): Promise<Response> {
   return fetchResponse(path, options, false)
 }

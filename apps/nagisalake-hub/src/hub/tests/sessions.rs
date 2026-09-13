@@ -1,5 +1,82 @@
 use super::*;
 
+#[tokio::test]
+async fn congested_command_queue_obeys_the_deadline_and_releases_unsent_capacity() {
+    let registry = SessionRegistry::default();
+    let (outbound, _receiver) = mpsc::channel(1);
+    outbound
+        .send(HubMessage::Ping(nagisalake_protocol::Ping {
+            nonce: "fill".into(),
+        }))
+        .await
+        .unwrap();
+    let pending = Arc::new(Mutex::new(HashMap::new()));
+    registry
+        .insert(WorkerSession {
+            view: WorkerView {
+                organization_id: "org".into(),
+                owner_user_id:   None,
+                worker_id:       "worker".into(),
+                session_id:      "session".into(),
+                namespace:       "ns".into(),
+                node_name:       "node".into(),
+                capabilities:    WorkerCapabilities {
+                    workflows: Vec::new(),
+                    parallelism: 1,
+                    queue_depth: 0,
+                    supports_queued_job_cancellation: true,
+                    labels: BTreeMap::new(),
+                },
+                active_jobs:     0,
+                queued_jobs:     0,
+                connected_at:    now_unix_ms(),
+            },
+            credential_id: None,
+            outbound,
+            pending: pending.clone(),
+            pending_capacity_reservations: HashSet::new(),
+            confirmed_capacity_reservations: HashSet::new(),
+            disconnect: CancellationToken::new(),
+            last_seen: Instant::now(),
+        })
+        .await;
+    assert!(
+        registry
+            .reserve_capacity_on("other", "worker", "wrong", |_| true)
+            .await
+            .is_none()
+    );
+    assert!(
+        registry
+            .reserve_capacity_on("org", "worker", "command", |_| true)
+            .await
+            .is_some()
+    );
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        registry.send_command(
+            "org",
+            "worker",
+            "session",
+            "command",
+            HubMessage::Ping(nagisalake_protocol::Ping {
+                nonce: "command".into(),
+            }),
+            Duration::from_millis(10),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(result.is_err());
+    assert!(pending.lock().await.is_empty());
+    assert!(
+        registry
+            .reserve_capacity_on("org", "worker", "next", |_| true)
+            .await
+            .is_some()
+    );
+}
+
 /// Admission has to be atomic. Two submissions arriving together must not
 /// both observe the same free slot and both dispatch, or the worker is handed
 /// more work than `parallelism + queue_depth` allows.

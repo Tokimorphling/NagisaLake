@@ -15,11 +15,13 @@ WebSocket/SMUX 和类型化 JSON 协议；PostgreSQL 保存公共控制面的多
 - [公开服务、账户与前端 API](docs/PUBLIC_PRODUCT_API_CN.md)
 - [OpenAPI 契约](docs/openapi.yaml)
 - [PostgreSQL 数据模型与租户边界](docs/DATABASE_SCHEMA_CN.md)
+- [Agent / OpenCode 接入与前端流式协议](docs/AGENT_API_CN.md)
+- [性能热点复核与本轮优化](docs/PERFORMANCE_REVIEW_CN.md)
 
 ## 本地启动
 
 要求 Rust 1.88+、一个 S3-compatible bucket（例如 MinIO）和本机 ComfyUI。公开账户 API 还要求
-PostgreSQL；不配置数据库时仅保留旧版 `/v1` 兼容 API。
+PostgreSQL；不配置数据库时保留 `/v1` 兼容 API，以及显式启用并使用 legacy bearer 认证的 Agent 接口。
 
 ```bash
 export NAGISALAKE_S3_ACCESS_KEY_ID=minioadmin

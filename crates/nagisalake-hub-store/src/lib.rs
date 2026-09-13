@@ -4,6 +4,7 @@
 //! channels and other live session state intentionally stay in the Hub process.
 
 mod accounts;
+mod agent_executions;
 mod artifacts;
 mod audit;
 mod batches;
@@ -20,6 +21,7 @@ mod sessions;
 mod snapshot;
 mod workflows;
 
+pub use agent_executions::{AgentExecution, FinishAgentExecution, NewAgentExecution};
 pub use batches::{BatchChildJob, BatchIdempotencyInsert, BatchInsert, CommitBatchResult};
 pub use models::*;
 pub use observability::BacklogMetrics;

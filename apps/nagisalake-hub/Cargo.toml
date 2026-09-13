@@ -19,9 +19,11 @@ clap = { workspace = true }
 data-encoding = { workspace = true }
 faststr = { workspace = true }
 futures-util = { workspace = true }
+hashbrown = { workspace = true }
 reqwest = { workspace = true, features = ["form", "json", "rustls"] }
 mime_guess = { version = "2", default-features = false, optional = true }
 rust-embed = { workspace = true, optional = true }
+nagisalake-agent = { workspace = true }
 nagisalake-core = { workspace = true }
 nagisalake-hub-auth = { workspace = true }
 nagisalake-hub-store = { workspace = true }
