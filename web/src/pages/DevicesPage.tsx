@@ -15,6 +15,11 @@ import {
   formatCompactDuration,
 } from '@/lib/insights'
 import { formatDateTime } from '@/lib/format'
+import {
+  deviceRuntime,
+  DEVICE_OUTPUT_LABELS,
+  WORKER_RUNTIME_TONES,
+} from '@/lib/worker-runtime'
 import { useAuth } from '@/state/auth'
 import { useToast } from '@/state/toast'
 import { Page, PageHeader } from '@/components/layout/AppLayout'
@@ -288,6 +293,7 @@ function DeviceCard({
     device.device_organization_id,
     device.device_id,
   )
+  const runtime = deviceRuntime(device)
   const utilization = worker?.parallelism
     ? Math.round((worker.active_jobs / worker.parallelism) * 100)
     : 0
@@ -339,6 +345,20 @@ function DeviceCard({
           <div>
             <dt className="text-muted">Worker 版本</dt>
             <dd className="truncate font-mono text-[11px]">{device.worker_version || '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-muted">推理引擎</dt>
+            <dd>
+              <Badge tone={WORKER_RUNTIME_TONES[runtime.kind]}>{runtime.label}</Badge>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted">输出能力</dt>
+            <dd className="truncate text-[11px] text-muted">
+              {runtime.outputs.length
+                ? runtime.outputs.map((kind) => DEVICE_OUTPUT_LABELS[kind]).join(' / ')
+                : '—'}
+            </dd>
           </div>
         </dl>
 

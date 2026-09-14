@@ -1,0 +1,9 @@
+{
+  "model": "stable-diffusion-3.5-large",
+  "prompt": "",
+  "negative_prompt": "",
+  "n": 1,
+  "size": "1024x1024",
+  "seed": 0,
+  "response_format": "b64_json"
+}

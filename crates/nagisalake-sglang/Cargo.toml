@@ -1,0 +1,17 @@
+[package]
+name = "nagisalake-sglang"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+data-encoding = { workspace = true }
+reqwest = { workspace = true, features = ["json", "rustls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }

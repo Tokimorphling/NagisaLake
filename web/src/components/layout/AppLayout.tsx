@@ -9,6 +9,7 @@ import { OrgSwitcher } from './OrgSwitcher'
 import { CommandPalette } from '@/components/ui/CommandPalette'
 import {
   IconAudit,
+  IconChevron,
   IconDashboard,
   IconDevice,
   IconGallery,
@@ -22,6 +23,7 @@ import {
   IconQuota,
   IconSearch,
   IconSettings,
+  IconSparkles,
   IconSun,
   IconWorkflow,
 } from './icons'
@@ -118,6 +120,18 @@ export function AppLayout() {
           {shortcutKey}
         </kbd>
       </button>
+
+      {/* Studio 是另一个布局壳，console 侧栏必须有返回入口，否则进得来回不去。 */}
+      <NavLink
+        to="/studio/video"
+        className="group flex w-full items-center justify-between rounded-xl border border-accent/25 bg-accent/10 px-3 py-2 text-xs font-medium text-accent transition hover:border-accent/40 hover:bg-accent/15"
+      >
+        <span className="flex items-center gap-2">
+          <IconSparkles className="size-3.5" />
+          Studio 创作台
+        </span>
+        <IconChevron className="size-3 -rotate-90 transition-transform group-hover:translate-x-0.5" />
+      </NavLink>
 
       <nav className="flex-1 space-y-4 overflow-y-auto pr-1" aria-label="主导航">
         {NAV_GROUPS.map((group) => (

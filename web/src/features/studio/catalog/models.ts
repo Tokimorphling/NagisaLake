@@ -1,7 +1,7 @@
 import type { GalleryItem, JobSummary, Workflow } from '@/api/types'
 
 export type StudioMedia = 'video' | 'image' | 'audio' | 'avatar'
-export type StudioInputMode = 'all' | 'text' | 'reference'
+export type StudioInputMode = 'all' | 'text' | 'reference' | 'motion'
 export const MEDIA_LABELS: Record<StudioMedia, string> = { video: '视频生成', image: '图片生成', audio: '音频生成', avatar: '数字人' }
 export const STUDIO_MEDIA: StudioMedia[] = ['avatar', 'video', 'image', 'audio']
 
@@ -22,6 +22,12 @@ export function workflowsForMedia(workflows: Workflow[], media: StudioMedia, mod
     if (mode === 'all') return true
     if (!workflow.manifest) return false
     const hasReference = workflow.manifest.inputs.some((input) => input.kind === 'artifact')
+    if (mode === 'motion') {
+      // 动作迁移需要视频参考素材驱动：只保留声明了 video artifact 输入的工作流。
+      return workflow.manifest.inputs.some(
+        (input) => input.kind === 'artifact' && (input.content_type ?? '').toLowerCase().startsWith('video/'),
+      )
+    }
     return mode === 'reference' ? hasReference : !hasReference
   })
 }

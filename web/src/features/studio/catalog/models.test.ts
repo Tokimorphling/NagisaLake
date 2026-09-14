@@ -16,6 +16,12 @@ describe('Studio workflow and transfer boundaries', () => {
     expect(workflowsForMedia([workflow,text], 'video','text')).toEqual([text])
     expect(workflowKey(workflow)).not.toBe(workflowKey({...workflow,version:'v2'}))
   })
+  it('keeps only video-reference workflows in motion mode', () => {
+    const motion: Workflow = {...workflow, id:'motion-model', manifest:{...workflow.manifest!, inputs:[parameter('prompt'), {...parameter('reference'), kind:'artifact', content_type:'video/mp4'}]}}
+    expect(workflowsForMedia([motion], 'video', 'motion')).toEqual([motion])
+    expect(workflowsForMedia([workflow], 'video', 'motion')).toEqual([])
+    expect(workflowsForMedia([workflow], 'video', 'reference')).toEqual([workflow])
+  })
   it('does not map the main editor onto a negative prompt or numeric field', () => {
     expect(promptField(workflow)).toBe('prompt')
     expect(promptField({...workflow,manifest:{...workflow.manifest!,inputs:[parameter('negative_prompt'),parameter('text','integer')]}})).toBeNull()

@@ -117,7 +117,7 @@ function StudioWorkspace({ organizationId, userId, media, canCreate }: { organiz
       <section className={cx('studio-composer', mobilePane !== 'composer' && 'studio-pane-mobile-hidden')} aria-label="创作设置">
         <MediaTabs />
         <div className="studio-composer-body">
-          <div className="flex items-center justify-center gap-3 text-xs text-muted"><label htmlFor="studio-input-mode">创作类型</label><select id="studio-input-mode" value={mode} onChange={(event) => { setMode(event.target.value as StudioInputMode); setSelectedKey('') }} className="max-w-full rounded-lg bg-transparent px-2 py-1.5 text-sm font-medium text-text"><option value="all">全部工作流</option><option value="text">文本输入</option><option value="reference">参考素材输入</option></select></div>
+          <div className="flex items-center justify-center gap-3 text-xs text-muted"><label htmlFor="studio-input-mode">创作类型</label><select id="studio-input-mode" value={mode} onChange={(event) => { setMode(event.target.value as StudioInputMode); setSelectedKey('') }} className="max-w-full rounded-lg bg-transparent px-2 py-1.5 text-sm font-medium text-text"><option value="all">全部工作流</option><option value="text">文本输入</option><option value="reference">参考素材输入</option><option value="motion">动作迁移</option></select></div>
           <div>
             <div className="studio-model-select">
               <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent"><IconWorkflow className="size-6" /></span>
